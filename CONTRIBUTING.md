@@ -40,9 +40,19 @@ Do not infer editor behavior from type checking alone.
 
 ## Change and release workflow
 
-Use short-lived work branches and pull requests. Squash version-specific work
-into the milestone branch. Merge a milestone into main and publish an immutable
-release tag only after explicit release approval. Do not push changes directly
-to main or a milestone branch. Repository-wide documentation uses a separate
-pull request based on main.
+Use short-lived feature branches such as feat/initial-language-support and
+pull requests targeting main. Squash reviewed and verified pull requests into
+main, then delete the merged feature branch. Do not push directly to main.
+The extension does not use compiler milestone branches such as mognitio/v015.
 
+Version the extension independently using SemVer in package.json and the lockfile.
+A language release does not automatically change the extension version. Record
+supported language server versions in the README compatibility table and keep
+the runtime compatibility check and its tests consistent with that table.
+Update the extension version for extension changes according to its own API and
+compatibility impact. Record those changes in CHANGELOG.md.
+
+Merging a feature is not a release. Publish an immutable extension version tag,
+GitHub Release, VSIX release, or Marketplace update only after explicit approval
+for that extension release. Language release approval does not automatically
+authorize a Marketplace publication.

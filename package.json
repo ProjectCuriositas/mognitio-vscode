@@ -1,0 +1,88 @@
+{
+  "name": "mognitio",
+  "displayName": "Mognitio",
+  "description": "Language support for Mognitio",
+  "version": "0.1.0",
+  "publisher": "ProjectCuriositas",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ProjectCuriositas/mognitio-vscode.git"
+  },
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onLanguage:mognitio"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Only lexical highlighting is available in untrusted workspaces."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "mognitio",
+        "aliases": [
+          "Mognitio"
+        ],
+        "extensions": [
+          ".mgn"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mognitio",
+        "scopeName": "source.mognitio",
+        "path": "./syntaxes/mognitio.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "mognitio.restartServer",
+        "title": "Mognitio: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Mognitio",
+      "properties": {
+        "mognitio.serverPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Absolute language server executable path. Empty selects mognitio-lsp from PATH."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "compile": "node scripts/build.mjs",
+    "test": "node --test test/*.test.cjs",
+    "package": "npm run compile && vsce package --no-dependencies",
+    "integration": "node test/run.cjs"
+  },
+  "dependencies": {
+    "vscode-languageclient": "10.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.12",
+    "@types/vscode": "1.91.0",
+    "@vscode/test-electron": "2.5.2",
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
+  }
+}
