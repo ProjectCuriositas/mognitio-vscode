@@ -59,7 +59,9 @@ Do not infer editor behavior from type checking alone.
 The session unit suite runs the complete Session module with mocked VS Code
 and client APIs, real disk reads, and a delayed file-close promise. It checks
 raw diagnostic receipt before a save followed by conversion completion after
-the save. This asynchronous race differs from the FIFO integration case.
+the save. It pairs that case with disk-unchanged editing/discard, pending
+observations, unreadable input, changed-back contents, newer empty diagnostics,
+and session stop. These asynchronous races differ from the FIFO integration case.
 
 ## Change and release workflow
 

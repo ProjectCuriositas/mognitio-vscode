@@ -18,3 +18,6 @@ highlighting, diagnostics, and explicit language server restart.
 
 - Order manifest diagnostic conversion against disk observations at receipt,
   preventing a conversion started before save from restoring old positions.
+
+- Preserve in-flight manifest diagnostics across edits that leave disk unchanged,
+  while waiting for pending disk observations and rejecting changed generations.
