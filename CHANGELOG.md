@@ -21,3 +21,6 @@ highlighting, diagnostics, and explicit language server restart.
 
 - Preserve in-flight manifest diagnostics across edits that leave disk unchanged,
   while waiting for pending disk observations and rejecting changed generations.
+
+- Establish each manifest notification's first-hash baseline from observations
+  after receipt, retaining new saved-content diagnostics while disk state catches up.

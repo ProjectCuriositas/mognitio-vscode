@@ -11,7 +11,7 @@ import {
 } from 'vscode-languageclient/node';
 import { compatibleVersion, compatibleCapabilities, contains } from './policy';
 import { DiagnosticGate } from './diagnostics';
-import { ManifestDiagnostics } from './manifest';
+import { ManifestBaseline, ManifestDiagnostics } from './manifest';
 
 const execute = promisify(execFile);
 class Client extends LanguageClient {
@@ -48,6 +48,7 @@ export class Session {
   private manifestRead = 0;
   private manifestReceive = 0;
   private manifestObservation?: Promise<void>;
+  private manifestBaseline?: ManifestBaseline;
   private watchers: vscode.Disposable[] = [];
   private cancellations = new Set<NodeJS.Timeout>();
   constructor(
@@ -87,6 +88,7 @@ export class Session {
     } catch {return undefined;}
   }
   private observeManifest(uri: vscode.Uri, disk: string | undefined): void {
+    this.manifestBaseline?.observe(disk);
     const revision = this.manifestDiagnostics.revision;
     this.manifestDiagnostics.observe(disk);
     if (revision !== this.manifestDiagnostics.revision) this.cache.delete(uri.toString());
@@ -115,22 +117,25 @@ export class Session {
                                 convert: () => Promise<vscode.Diagnostic[]>): Promise<void> {
     if (!valid()) return;
     const receive = ++this.manifestReceive;
-    const read = ++this.manifestRead;
-    const initialRevision = this.manifestDiagnostics.revision;
+    ++this.manifestRead;
+    const baseline = this.manifestBaseline = new ManifestBaseline();
     // A newer receipt supersedes earlier restore reads, without changing disk generation.
     this.manifestObservation = undefined;
     const current = () => valid() && receive === this.manifestReceive;
     const before = await this.manifestDisk();
     while (this.manifestObservation) await this.manifestObservation;
     if (!current()) return;
-    if (read !== this.manifestRead) {
-      // A later observation is authoritative; unchanged disk permits this conversion.
-      if (initialRevision !== this.manifestDiagnostics.revision || !this.manifestDiagnostics.matches(before)) return;
-    } else {
-      this.observeManifest(uri, before);
+    this.manifestBaseline = undefined;
+    if (before === undefined) {
+      this.observeManifest(uri, undefined);
       this.showManifest(uri);
+      return;
     }
-    if (before === undefined) return;
+    // Establish this notification's baseline, not the cache's pre-receipt generation.
+    // Every authoritative observation since receipt must agree with the first hash.
+    if (!baseline.accepts(before)) return;
+    this.observeManifest(uri, before);
+    this.showManifest(uri);
     const revision = this.manifestDiagnostics.revision;
     const diagnostics = await convert();
     const after = await this.manifestDisk();
@@ -257,7 +262,7 @@ export class Session {
     if (this.stopped) return;
     this.stopped = true; ++this.epoch; this.cache.clear(); this.diagnostics.clear();
     this.manifestDiagnostics.clear(); ++this.manifestRead; ++this.manifestReceive;
-    this.manifestObservation = undefined;
+    this.manifestObservation = undefined; this.manifestBaseline = undefined;
     this.watchers.forEach(w => w.dispose());
     this.cancellations.forEach(clearTimeout);
     const child = this.child;
