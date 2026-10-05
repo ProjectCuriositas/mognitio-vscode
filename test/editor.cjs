@@ -62,6 +62,37 @@ exports.run=async()=>{
   await vscode.workspace.fs.writeFile(manifest,Buffer.from('[project]\nname = "sample"\nroot_namespace = "Example"\n'));
   await until(()=>!vscode.languages.getDiagnostics(manifest).some(d=>d.source==='Mognitio'),'saved manifest correction');
   await vscode.window.showTextDocument(doc);
+  if(process.env.MOGNITIO_DIAGNOSTIC_GATE){
+    const gate=process.env.MOGNITIO_DIAGNOSTIC_GATE;
+    fs.writeFileSync(path.join(gate,'arm'),uri.toString());
+    const error=new vscode.WorkspaceEdit();
+    error.replace(uri,new vscode.Range(1,0,1,doc.lineAt(1).text.length),'let value: Int = false;');
+    await vscode.workspace.applyEdit(error);
+    await until(()=>fs.existsSync(path.join(gate,'held')),'old diagnostic captured in FIFO transport');
+    const held=JSON.parse(fs.readFileSync(path.join(gate,'held'),'utf8'));
+    assert.equal(held.version,doc.version);
+    const correction=new vscode.WorkspaceEdit();
+    correction.replace(uri,new vscode.Range(1,0,1,doc.lineAt(1).text.length),'let value: Int = 3;');
+    await vscode.workspace.applyEdit(correction);
+    assert(doc.version>held.version);
+    const stale=[];
+    const listener=vscode.languages.onDidChangeDiagnostics(e=>{
+      if(e.uris.some(u=>u.toString()===uri.toString()))
+        stale.push(...vscode.languages.getDiagnostics(uri).filter(d=>d.source==='Mognitio'));
+    });
+    try{
+      fs.writeFileSync(path.join(gate,'release'),'ready');
+      await until(()=>fs.existsSync(path.join(gate,'released')),'old diagnostic delivered');
+      // Hold later frames until the stale push has had time to reach the editor.
+      await new Promise(r=>setTimeout(r,500));
+      assert.deepEqual(stale,[],'old document diagnostics must never reappear');
+      assert(!vscode.languages.getDiagnostics(uri).some(d=>d.source==='Mognitio'));
+      fs.writeFileSync(path.join(gate,'continue'),'ready');
+      await until(async()=>(await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',uri))?.data?.length,'latest analysis after delayed diagnostic');
+      console.log('PASS FIFO delayed diagnostic discarded after document version changed');
+    }finally{fs.writeFileSync(path.join(gate,'continue'),'ready');listener.dispose();}
+    return;
+  }
   // A crashed owned server must not restart until the explicit command.
   const children=fs.readFileSync('/proc/'+process.pid+'/task/'+process.pid+'/children','utf8').trim().split(' ').filter(Boolean);
   const servers=children.filter(pid=>{try{return fs.readFileSync('/proc/'+pid+'/cmdline','utf8').includes('/lsp/server.py');}catch{return false;}});

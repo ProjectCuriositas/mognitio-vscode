@@ -43,6 +43,8 @@ a display (a headless X server is sufficient):
 - Set MOGNITIO_TEST_SERVER to a compatible server executable.
 - Set MOGNITIO_TEST_VSIX to the packaged VSIX, then run npm run integration.
 - Repeat with MOGNITIO_TEST_UNTRUSTED=1 to check Restricted Mode in a normal window.
+- Repeat with MOGNITIO_TEST_DELAY_DIAGNOSTICS=1 to delay real diagnostics in FIFO
+  order until the target document changes and verify that stale errors never appear.
 - For development toolchains only, omit MOGNITIO_TEST_VSIX and explicitly set
   MOGNITIO_EXPECTED_IDENTITY to the generated identity.json.
 
