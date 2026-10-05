@@ -1,9 +1,15 @@
 /** A received manifest diagnostic set belongs to the observed disk contents. */
 export class ManifestDiagnostics<T> {
   private disk?: string;
+  private observed = false;
+  private generation = 0;
+  get revision(): number {return this.generation;}
+  matches(disk: string | undefined): boolean {return disk !== undefined && disk === this.disk;}
   private cached?: {disk: string, value: T};
   private waiting = true;
   observe(disk: string | undefined): void {
+    if (disk === undefined || (this.observed && disk !== this.disk)) ++this.generation;
+    this.observed = true;
     if (disk === undefined || disk !== this.disk) {
       this.cached = undefined;
       this.waiting = true;

@@ -31,14 +31,16 @@ async function fixture(t) {
   const manifestUri = uri(pathToFileURL(manifest).href);
   const document = {uri:manifestUri, isDirty:false, version:1};
   const shown = [], notifications = new Map();
-  let closeNumber = 0, holdAt = 0, held, release;
+  let closeNumber = 0;
+  const holds = new Map();
   const mockFs = {...fs, promises:{...fs.promises, open:async (...args) => {
     const file = await fs.promises.open(...args);
     const close = file.close.bind(file);
     file.close = async () => {
       await close();
       const number = ++closeNumber;
-      if (number === holdAt) {held.resolve(); await release.promise;}
+      const hold = holds.get(number);
+      if (hold) {hold.held.resolve(); await hold.release.promise;}
     };
     return file;
   }}};
@@ -89,15 +91,26 @@ async function fixture(t) {
   const session = new mod.exports.Session('fixture',
     {uri:uri(pathToFileURL(directory).href),name:'fixture'}, [], {info() {},error:message => {throw new Error(message);}},
     undefined);
+  // Observe completion without making the production notification callback blocking.
+  let pending;
+  if (session.publishManifest) {
+    const publish = session.publishManifest.bind(session);
+    session.publishManifest = (...args) => (pending = publish(...args));
+  }
   await session.start();
-  t.after(async () => {release?.resolve(); await session.stop(); await fs.promises.rm(directory,{recursive:true,force:true});});
+  t.after(async () => {holds.forEach(hold => hold.release.resolve()); await session.stop(); await fs.promises.rm(directory,{recursive:true,force:true});});
   return {
     session, document, shown, manifestUri,
     save:content => fs.promises.writeFile(manifest, content),
-    publish:diagnostics => notifications.get('diagnostics')({uri:manifestUri.toString(), diagnostics}),
+    remove:() => fs.promises.unlink(manifest),
+    publish:diagnostics => {
+      notifications.get('diagnostics')({uri:manifestUri.toString(), diagnostics});
+      return pending ?? settle();
+    },
     holdClose:offset => {
-      holdAt = closeNumber + offset; held = deferred(); release = deferred();
-      return {held:held.promise, release:async () => {release.resolve(); await settle();}};
+      const hold = {held:deferred(), release:deferred()};
+      holds.set(closeNumber + offset, hold);
+      return {held:hold.held.promise, release:async () => {hold.release.resolve(); await settle();}};
     },
     async untilShown(predicate) {
       const deadline = Date.now() + 2000;
@@ -154,4 +167,85 @@ test('a newer raw receipt supersedes an older restore without losing unchanged-d
   f.document.isDirty = false;
   await f.session.restoreManifest(f.manifestUri);
   assert.equal(f.shown.at(-1)[0].message, 'newest error');
+});
+
+test('disk-unchanged editing retains an in-flight raw diagnostic for discard', async t => {
+  const f = await fixture(t), barrier = f.holdClose(2);
+  const publishing = f.publish([{message:'valid disk A error'}]);
+  await barrier.held;
+  f.document.isDirty = true;
+  await f.session.restoreManifest(f.manifestUri);
+  await barrier.release(); await publishing;
+  assert.deepEqual(f.shown.at(-1), []);
+  f.document.isDirty = false;
+  await f.session.restoreManifest(f.manifestUri);
+  assert.equal(f.shown.at(-1)?.[0]?.message, 'valid disk A error');
+});
+
+for (const close of [1, 2]) {
+  for (const change of ['edit', 'save', 'unreadable', 'changed-back']) {
+    test('raw close ' + close + ': ' + change + ' preserves only the confirmed disk generation', {timeout:3000}, async t => {
+      const f = await fixture(t), barrier = f.holdClose(close);
+      const publishing = f.publish([{message:'disk A error'}]);
+      await barrier.held;
+      f.document.isDirty = true;
+      if (change === 'save' || change === 'changed-back') await f.save('disk B');
+      if (change === 'unreadable') await f.remove();
+      await f.session.restoreManifest(f.manifestUri);
+      if (change === 'changed-back') {
+        await f.save('invalid A');
+        await f.session.restoreManifest(f.manifestUri);
+      }
+      await barrier.release(); await publishing;
+      assert.deepEqual(f.shown.at(-1), []);
+      assert.equal(f.session.cache.has(f.manifestUri.toString()), change === 'edit');
+      f.document.isDirty = false;
+      await f.session.restoreManifest(f.manifestUri);
+      if (change === 'edit') assert.equal(f.shown.at(-1)[0].message, 'disk A error');
+      else assert.deepEqual(f.shown.at(-1), []);
+    });
+  }
+}
+
+for (const changed of [false, true]) {
+  test('conversion waits for a pending disk observation: changed=' + changed, {timeout:3000}, async t => {
+    const f = await fixture(t), raw = f.holdClose(2);
+    let completed = false;
+    const publishing = f.publish([{message:'disk A error'}]).then(() => {completed = true;});
+    await raw.held;
+    f.document.isDirty = true;
+    if (changed) await f.save('disk B');
+    const disk = f.holdClose(1);
+    const restoring = f.session.restoreManifest(f.manifestUri);
+    await disk.held;
+    await raw.release();
+    assert.equal(completed, false);
+    assert.equal(f.session.cache.has(f.manifestUri.toString()), false);
+    await disk.release(); await restoring; await publishing;
+    assert.equal(f.session.cache.has(f.manifestUri.toString()), !changed);
+    f.document.isDirty = false;
+    await f.session.restoreManifest(f.manifestUri);
+    assert.deepEqual(f.shown.at(-1), changed ? [] : [{message:'disk A error'}]);
+  });
+}
+
+test('newer empty raw diagnostics defeat an older conversion on unchanged disk', {timeout:3000}, async t => {
+  const f = await fixture(t), barrier = f.holdClose(2);
+  const older = f.publish([{message:'older error'}]);
+  await barrier.held;
+  await f.publish([]);
+  await barrier.release(); await older;
+  assert.deepEqual(f.shown.at(-1), []);
+  assert.deepEqual(f.session.cache.get(f.manifestUri.toString()), []);
+});
+
+test('session stop defeats an in-flight manifest conversion', {timeout:3000}, async t => {
+  const f = await fixture(t), barrier = f.holdClose(2);
+  const publishing = f.publish([{message:'old session error'}]);
+  await barrier.held;
+  await f.session.stop();
+  const count = f.shown.length;
+  await barrier.release(); await publishing;
+  assert.equal(f.shown.length, count);
+  assert.equal(f.session.cache.size, 0);
 });

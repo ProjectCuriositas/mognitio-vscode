@@ -46,6 +46,8 @@ export class Session {
   private diagnostics = new DiagnosticGate();
   private manifestDiagnostics = new ManifestDiagnostics<readonly vscode.Diagnostic[]>();
   private manifestRead = 0;
+  private manifestReceive = 0;
+  private manifestObservation?: Promise<void>;
   private watchers: vscode.Disposable[] = [];
   private cancellations = new Set<NodeJS.Timeout>();
   constructor(
@@ -84,17 +86,65 @@ export class Session {
       } finally {await file.close();}
     } catch {return undefined;}
   }
+  private observeManifest(uri: vscode.Uri, disk: string | undefined): void {
+    const revision = this.manifestDiagnostics.revision;
+    this.manifestDiagnostics.observe(disk);
+    if (revision !== this.manifestDiagnostics.revision) this.cache.delete(uri.toString());
+  }
+  private showManifest(uri: vscode.Uri): void {
+    const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty);
+    this.client?.diagnostics?.set(uri, this.manifestDiagnostics.visible(dirty) ?? []);
+  }
   async restoreManifest(changed?: vscode.Uri): Promise<void> {
     if (!this.client || !this.folder || this.stopped || (changed && !this.manifest(changed))) return;
     const uri = vscode.Uri.joinPath(this.folder.uri, 'mognitio.toml');
     const read = ++this.manifestRead;
-    // Dirty-to-clean may be a save. Never restore before checking disk contents.
+    // The event can be an edit, discard, or save; only observed disk changes expire data.
     this.client.diagnostics?.set(uri, []);
-    const disk = await this.manifestDisk();
-    if (this.stopped || read !== this.manifestRead) return;
-    this.manifestDiagnostics.observe(disk);
-    const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty);
-    this.client.diagnostics?.set(uri, this.manifestDiagnostics.visible(dirty) ?? []);
+    const observation = (async () => {
+      const disk = await this.manifestDisk();
+      if (this.stopped || read !== this.manifestRead) return;
+      this.observeManifest(uri, disk);
+      this.showManifest(uri);
+    })();
+    this.manifestObservation = observation;
+    try {await observation;}
+    finally {if (this.manifestObservation === observation) this.manifestObservation = undefined;}
+  }
+  private async publishManifest(uri: vscode.Uri, valid: () => boolean,
+                                convert: () => Promise<vscode.Diagnostic[]>): Promise<void> {
+    if (!valid()) return;
+    const receive = ++this.manifestReceive;
+    const read = ++this.manifestRead;
+    const initialRevision = this.manifestDiagnostics.revision;
+    // A newer receipt supersedes earlier restore reads, without changing disk generation.
+    this.manifestObservation = undefined;
+    const current = () => valid() && receive === this.manifestReceive;
+    const before = await this.manifestDisk();
+    while (this.manifestObservation) await this.manifestObservation;
+    if (!current()) return;
+    if (read !== this.manifestRead) {
+      // A later observation is authoritative; unchanged disk permits this conversion.
+      if (initialRevision !== this.manifestDiagnostics.revision || !this.manifestDiagnostics.matches(before)) return;
+    } else {
+      this.observeManifest(uri, before);
+      this.showManifest(uri);
+    }
+    if (before === undefined) return;
+    const revision = this.manifestDiagnostics.revision;
+    const diagnostics = await convert();
+    const after = await this.manifestDisk();
+    // Apply in this continuation, with no await between the final check and cache/display.
+    while (this.manifestObservation) await this.manifestObservation;
+    if (!current() || revision !== this.manifestDiagnostics.revision) return;
+    if (before !== after || !this.manifestDiagnostics.matches(after)) {
+      this.observeManifest(uri, undefined);
+      this.showManifest(uri);
+      return;
+    }
+    this.manifestDiagnostics.publish(after, diagnostics);
+    this.cache.set(uri.toString(), diagnostics);
+    this.showManifest(uri);
   }
   async start(): Promise<void> {
     const command = await executable();
@@ -158,30 +208,20 @@ export class Session {
       const belongs = uri.scheme === 'file' && !uri.authority && (this.folder
         ? this.manifest(uri) || (uri.fsPath.endsWith('.mgn') && contains(path.join(this.folder.uri.fsPath, 'src'), uri.fsPath))
         : this.key.slice('rootless:'.length).split('|').includes(key));
-      // Order receipt against save/discard/watch reads before any asynchronous work.
-      const manifestRead = this.manifest(uri) ? ++this.manifestRead : undefined;
       const valid = () => {
         if (this.stopped || epoch !== this.epoch || !belongs) return false;
-        if (this.manifest(uri)) return manifestRead === this.manifestRead;
+        if (this.manifest(uri)) return true;
         const current = vscode.workspace.textDocuments.find(d => d.uri.toString() === key);
         return current === document && (current ? params.version === current.version : params.version === undefined);
       };
-      void this.diagnostics.publish(key, valid,
-        async () => {
-          const manifest = this.manifest(uri);
-          const before = manifest ? await this.manifestDisk() : undefined;
-          const diagnostics = await client.protocol2CodeConverter.asDiagnostics(params.diagnostics);
-          const after = manifest ? await this.manifestDisk() : undefined;
-          return {diagnostics, disk: before === after ? after : undefined};
-        },
-        ({diagnostics, disk}) => {
+      const convert = () => client.protocol2CodeConverter.asDiagnostics(params.diagnostics);
+      const publish = this.manifest(uri)
+        ? this.publishManifest(uri, valid, convert)
+        : this.diagnostics.publish(key, valid, convert, diagnostics => {
           this.cache.set(key, diagnostics);
-          if (this.manifest(uri)) {
-            this.manifestDiagnostics.publish(disk, diagnostics);
-            const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty);
-            client.diagnostics?.set(uri, this.manifestDiagnostics.visible(dirty) ?? []);
-          } else client.diagnostics?.set(uri, diagnostics);
-        }).catch(error => this.output.error('Diagnostic conversion failed: ' + String(error)));
+          client.diagnostics?.set(uri, diagnostics);
+        });
+      void publish.catch(error => this.output.error('Diagnostic conversion failed: ' + String(error)));
     }));
     let timer: NodeJS.Timeout | undefined;
     try {
@@ -215,7 +255,9 @@ export class Session {
   }
   async stop(): Promise<void> {
     if (this.stopped) return;
-    this.stopped = true; ++this.epoch; this.cache.clear(); this.diagnostics.clear(); this.manifestDiagnostics.clear(); ++this.manifestRead;
+    this.stopped = true; ++this.epoch; this.cache.clear(); this.diagnostics.clear();
+    this.manifestDiagnostics.clear(); ++this.manifestRead; ++this.manifestReceive;
+    this.manifestObservation = undefined;
     this.watchers.forEach(w => w.dispose());
     this.cancellations.forEach(clearTimeout);
     const child = this.child;
