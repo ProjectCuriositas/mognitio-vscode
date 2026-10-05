@@ -63,16 +63,17 @@ exports.run=async()=>{
     const gate=process.env.MOGNITIO_MANIFEST_GATE;
     fs.writeFileSync(path.join(gate,'pause'),'ready');
     const stale=[];
-    const listener=vscode.languages.onDidChangeDiagnostics(e=>{
-      if(e.uris.some(u=>u.toString()===manifest.toString()))
-        stale.push(...vscode.languages.getDiagnostics(manifest).filter(d=>d.source==='Mognitio'));
-    });
+    let listener;
     try{
       const correction=new vscode.WorkspaceEdit();
       correction.replace(manifest,new vscode.Range(manifestDoc.positionAt(0),manifestDoc.positionAt(manifestDoc.getText().length)),
         '[project]\nname = "sample"\nroot_namespace = "Example"\n');
       await vscode.workspace.applyEdit(correction);
       await until(()=>!vscode.languages.getDiagnostics(manifest).some(d=>d.source==='Mognitio'),'dirty manifest hides cached error');
+      listener=vscode.languages.onDidChangeDiagnostics(e=>{
+        if(e.uris.some(u=>u.toString()===manifest.toString()))
+          stale.push(...vscode.languages.getDiagnostics(manifest).filter(d=>d.source==='Mognitio'));
+      });
       assert(await manifestDoc.save());
       await until(()=>fs.existsSync(path.join(gate,'paused')),'new manifest diagnostics withheld by FIFO transport');
       await new Promise(r=>setTimeout(r,500));
@@ -81,7 +82,7 @@ exports.run=async()=>{
       fs.writeFileSync(path.join(gate,'resume'),'ready');
       await until(async()=>(await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',uri))?.data?.length,'analysis after manifest save');
       console.log('PASS saved manifest does not revive cached diagnostics while new pushes are blocked; discard restores cache');
-    }finally{fs.writeFileSync(path.join(gate,'resume'),'ready');listener.dispose();}
+    }finally{fs.writeFileSync(path.join(gate,'resume'),'ready');listener?.dispose();}
     return;
   }
   await vscode.workspace.fs.writeFile(manifest,Buffer.from('[project]\nname = "sample"\nroot_namespace = "Example"\n'));

@@ -75,7 +75,7 @@ export class Session {
         const hash = createHash('sha256'), buffer = new Uint8Array(64 * 1024);
         let total = 0;
         while (true) {
-          const {bytesRead} = await file.read(buffer);
+          const {bytesRead} = await file.read(buffer, 0, buffer.length, null);
           if (!bytesRead) return hash.digest('hex');
           total += bytesRead;
           if (total > 4 * 1024 * 1024) return undefined;
@@ -177,7 +177,7 @@ export class Session {
           if (this.manifest(uri)) {
             ++this.manifestRead; // Supersede any earlier asynchronous restore.
             this.manifestDiagnostics.publish(disk, diagnostics);
-            const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === key && d.isDirty);
+            const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty);
             client.diagnostics?.set(uri, this.manifestDiagnostics.visible(dirty) ?? []);
           } else client.diagnostics?.set(uri, diagnostics);
         }).catch(error => this.output.error('Diagnostic conversion failed: ' + String(error)));
