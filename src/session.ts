@@ -6,9 +6,10 @@ import { promises as fs, constants } from 'node:fs';
 import * as path from 'node:path';
 import {
   LanguageClient, InitializeParams, ErrorAction, CloseAction, State,
-  SemanticTokensRegistrationType, SemanticTokensRefreshRequest
+  SemanticTokensRegistrationType, SemanticTokensRefreshRequest, PublishDiagnosticsNotification
 } from 'vscode-languageclient/node';
-import { compatibleVersion, compatibleCapabilities } from './policy';
+import { compatibleVersion, compatibleCapabilities, contains } from './policy';
+import { DiagnosticGate } from './diagnostics';
 
 const execute = promisify(execFile);
 class Client extends LanguageClient {
@@ -40,6 +41,7 @@ export class Session {
   epoch = 0;
   stopped = false;
   cache = new Map<string, readonly vscode.Diagnostic[]>();
+  private diagnostics = new DiagnosticGate();
   private watchers: vscode.Disposable[] = [];
   private cancellations = new Set<NodeJS.Timeout>();
   constructor(
@@ -100,12 +102,6 @@ export class Session {
         didOpen: async (doc, next) => {this.invalidate(); await next(doc);},
         didChange: async (event, next) => {this.invalidate(); await next(event);},
         didClose: async (doc, next) => {this.invalidate(); await next(doc);},
-        handleDiagnostics: (uri, diagnostics, next) => {
-          if (this.stopped || epoch !== this.epoch) return;
-          this.cache.set(uri.toString(), diagnostics);
-          const dirty = this.manifest(uri) && vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty);
-          next(uri, dirty ? [] : diagnostics);
-        },
         provideDocumentSemanticTokens: async (document, token, next) => {
           const generation = this.generation, version = document.version;
           let watchdog: NodeJS.Timeout | undefined;
@@ -127,6 +123,29 @@ export class Session {
     });
     client.folder = this.folder;
     this.client = client;
+    // Register before start: pending handlers replace the built-in receiver before
+    // initialized is sent. The built-in diagnostic queue discards params.version.
+    this.watchers.push(client.onNotification(PublishDiagnosticsNotification.type, params => {
+      const uri = vscode.Uri.parse(params.uri);
+      const key = uri.toString();
+      const document = vscode.workspace.textDocuments.find(d => d.uri.toString() === key);
+      const belongs = uri.scheme === 'file' && !uri.authority && (this.folder
+        ? this.manifest(uri) || (uri.fsPath.endsWith('.mgn') && contains(path.join(this.folder.uri.fsPath, 'src'), uri.fsPath))
+        : this.key.slice('rootless:'.length).split('|').includes(key));
+      const valid = () => {
+        if (this.stopped || epoch !== this.epoch || !belongs) return false;
+        if (this.manifest(uri)) return true;
+        const current = vscode.workspace.textDocuments.find(d => d.uri.toString() === key);
+        return current === document && (current ? params.version === current.version : params.version === undefined);
+      };
+      void this.diagnostics.publish(key, valid,
+        () => client.protocol2CodeConverter.asDiagnostics(params.diagnostics),
+        diagnostics => {
+          this.cache.set(key, diagnostics);
+          const dirty = this.manifest(uri) && vscode.workspace.textDocuments.some(d => d.uri.toString() === key && d.isDirty);
+          client.diagnostics?.set(uri, dirty ? [] : diagnostics);
+        }).catch(error => this.output.error('Diagnostic conversion failed: ' + String(error)));
+    }));
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([client.start(), new Promise((_, reject) => {
@@ -158,7 +177,7 @@ export class Session {
   }
   async stop(): Promise<void> {
     if (this.stopped) return;
-    this.stopped = true; ++this.epoch; this.cache.clear();
+    this.stopped = true; ++this.epoch; this.cache.clear(); this.diagnostics.clear();
     this.watchers.forEach(w => w.dispose());
     this.cancellations.forEach(clearTimeout);
     const child = this.child;

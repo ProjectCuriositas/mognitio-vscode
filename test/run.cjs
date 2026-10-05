@@ -14,6 +14,16 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
   'editor.semanticTokenColorCustomizations':{rules:{'variable.readonly':'#ff00ff'}},
   'security.workspace.trust.enabled':untrusted,'security.workspace.trust.startupPrompt':'never','workbench.startupEditor':'none'
  }));
+ const diagnosticGate=path.join(user,'diagnostic-gate');fs.mkdirSync(diagnosticGate);
+ if(!untrusted && process.env.MOGNITIO_TEST_DELAY_DIAGNOSTICS==='1'){
+  const proxy=path.join(user,'diagnostic-proxy');
+  fs.copyFileSync(path.resolve('test/diagnostic-proxy.py'),proxy);fs.chmodSync(proxy,0o755);
+  process.env.MOGNITIO_PROXY_SERVER=process.env.MOGNITIO_TEST_SERVER;
+  process.env.MOGNITIO_PROXY_GATE=diagnosticGate;
+  const settingsPath=path.join(user,'User/settings.json');
+  const settings=JSON.parse(fs.readFileSync(settingsPath));settings['mognitio.serverPath']=proxy;
+  fs.writeFileSync(settingsPath,JSON.stringify(settings));
+ }
  const executable=await downloadAndUnzipVSCode(process.env.MOGNITIO_TEST_VSCODE||'1.91.0');
  let development=path.resolve('.');
  const extensions=path.join(user,'extensions');
@@ -49,7 +59,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
    });}
   }else await runTests({vscodeExecutablePath:executable,extensionDevelopmentPath:development,extensionTestsPath:path.resolve('test/editor.cjs'),
    launchArgs:[workspaceFile,'--user-data-dir='+user,'--extensions-dir='+extensions,'--remote-debugging-port='+port,'--skip-welcome','--skip-release-notes','--disable-gpu','--no-sandbox'],
-   extensionTestsEnv:{MOGNITIO_EXPECTED_IDENTITY:process.env.MOGNITIO_EXPECTED_IDENTITY||'',MOGNITIO_PAINT_DIRECTORY:paint}});
+   extensionTestsEnv:{MOGNITIO_EXPECTED_IDENTITY:process.env.MOGNITIO_EXPECTED_IDENTITY||'',MOGNITIO_PAINT_DIRECTORY:paint,MOGNITIO_DIAGNOSTIC_GATE:process.env.MOGNITIO_TEST_DELAY_DIAGNOSTICS==='1'?diagnosticGate:''}});
   await observation;if(observationError)throw observationError;passed=true;
  }finally{done.finished=true;if(passed){fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});fs.rmSync(user,{recursive:true,force:true,maxRetries:5,retryDelay:100});}else console.log('Retained fixture',root,user);}
 })().catch(error=>{console.error(error);process.exit(1);});
