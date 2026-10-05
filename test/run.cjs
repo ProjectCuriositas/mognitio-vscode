@@ -25,6 +25,8 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
   fs.writeFileSync(path.join(development,'package.json'),JSON.stringify({name:'mognitio-test-harness',version:'0.0.0',publisher:'test',engines:{vscode:'^1.91.0'},main:'index.cjs'}));
   fs.writeFileSync(path.join(development,'index.cjs'),'exports.activate=()=>{};');
  }
+ const workspaceFile=path.join(user,'fixture.code-workspace');
+ fs.writeFileSync(workspaceFile,JSON.stringify({folders:[{path:root}]}));
  const paint=path.resolve('.vscode-test/evidence');fs.mkdirSync(paint,{recursive:true});
  for(const file of ['on','off','on-observed','off-observed'])fs.rmSync(path.join(paint,file),{force:true});
  const port=await new Promise(resolve=>{const server=net.createServer();server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});
@@ -39,14 +41,14 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
    const settingsPath=path.join(user,'User/settings.json');
    const settings=JSON.parse(fs.readFileSync(settingsPath));settings['mognitio.serverPath']=probe;
    fs.writeFileSync(settingsPath,JSON.stringify(settings));
-   const child=spawn(executable,[root,'--goto',path.join(root,'src/sample.mgn'),'--user-data-dir='+user,'--extensions-dir='+extensions,'--remote-debugging-port='+port,'--skip-welcome','--skip-release-notes','--no-sandbox'],{detached:true,stdio:'ignore'});
+   const child=spawn(executable,[root,'--goto',path.join(root,'src/sample.mgn'),'--user-data-dir='+user,'--extensions-dir='+extensions,'--remote-debugging-port='+port,'--skip-welcome','--skip-release-notes','--disable-gpu','--no-sandbox'],{detached:true,stdio:'ignore'});
    try{await observation;if(fs.existsSync(marker))throw new Error('Untrusted workspace executed a server');console.log('PASS untrusted installed extension: Restricted Mode, lexical association, no server probe or launch');}
    finally{try{process.kill(-child.pid,'SIGTERM');}catch{} if(child.exitCode===null&&child.signalCode===null)await new Promise(resolve=>{
     const timer=setTimeout(()=>{try{process.kill(-child.pid,'SIGKILL');}catch{}},2000);
     child.once('exit',()=>{clearTimeout(timer);resolve();});
    });}
   }else await runTests({vscodeExecutablePath:executable,extensionDevelopmentPath:development,extensionTestsPath:path.resolve('test/editor.cjs'),
-   launchArgs:[root,'--user-data-dir='+user,'--extensions-dir='+extensions,'--remote-debugging-port='+port,'--skip-welcome','--skip-release-notes','--no-sandbox'],
+   launchArgs:[workspaceFile,'--user-data-dir='+user,'--extensions-dir='+extensions,'--remote-debugging-port='+port,'--skip-welcome','--skip-release-notes','--disable-gpu','--no-sandbox'],
    extensionTestsEnv:{MOGNITIO_EXPECTED_IDENTITY:process.env.MOGNITIO_EXPECTED_IDENTITY||'',MOGNITIO_PAINT_DIRECTORY:paint}});
   await observation;if(observationError)throw observationError;passed=true;
  }finally{done.finished=true;if(passed){fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});fs.rmSync(user,{recursive:true,force:true,maxRetries:5,retryDelay:100});}else console.log('Retained fixture',root,user);}

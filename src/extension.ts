@@ -1,3 +1,4 @@
+import type { DocumentSelector } from 'vscode-languageclient/node';
 import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
@@ -9,7 +10,7 @@ let queue = Promise.resolve();
 let output: vscode.LogOutputChannel;
 let context: vscode.ExtensionContext;
 async function reconcile(): Promise<void> {
-  const wanted = new Map<string, {folder?: vscode.WorkspaceFolder, selector: vscode.DocumentSelector}>();
+  const wanted = new Map<string, {folder?: vscode.WorkspaceFolder, selector: DocumentSelector}>();
   const folders = [...(vscode.workspace.workspaceFolders ?? [])].filter(f => f.uri.scheme === 'file');
   const roots = await Promise.all(folders.map(async f => {
     try {return await fs.realpath(path.join(f.uri.fsPath, 'src'));}
@@ -19,7 +20,7 @@ async function reconcile(): Promise<void> {
   if (vscode.workspace.isTrusted && process.platform === 'linux' && process.arch === 'x64' && !vscode.env.remoteName) {
     folders.forEach((folder, i) => {
       if (!rejected.has(i)) wanted.set(folder.uri.toString(), {folder,
-        selector: [{language: 'mognitio', scheme: 'file', pattern: new vscode.RelativePattern(folder, 'src/**/*.mgn')}]});
+        selector: [{language: 'mognitio', scheme: 'file', pattern: {baseUri: folder.uri.toString(), pattern: 'src/**/*.mgn'}}]});
     });
     const rootless = vscode.workspace.textDocuments.filter(d => d.uri.scheme === 'file' && d.languageId === 'mognitio'
       && !folders.some(f => contains(path.join(f.uri.fsPath, 'src'), d.uri.fsPath)));
@@ -27,7 +28,7 @@ async function reconcile(): Promise<void> {
       const uris = rootless.map(d => d.uri.toString()).sort();
       wanted.set('rootless:' + uris.join('|'), {selector: rootless.map(d => ({
         language: 'mognitio', scheme: 'file',
-        pattern: new vscode.RelativePattern(path.dirname(d.uri.fsPath), path.basename(d.uri.fsPath).replace(/[?*[\]{}]/g, '[$&]'))
+        pattern: {baseUri: vscode.Uri.file(path.dirname(d.uri.fsPath)).toString(), pattern: path.basename(d.uri.fsPath).replace(/[?*[\]{}]/g, '[$&]')}
       }))});
     }
   }

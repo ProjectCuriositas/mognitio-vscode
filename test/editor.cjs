@@ -62,6 +62,39 @@ exports.run=async()=>{
   await vscode.workspace.fs.writeFile(manifest,Buffer.from('[project]\nname = "sample"\nroot_namespace = "Example"\n'));
   await until(()=>!vscode.languages.getDiagnostics(manifest).some(d=>d.source==='Mognitio'),'saved manifest correction');
   await vscode.window.showTextDocument(doc);
-  console.log('PASS installed extension: semantic paint on/off, overlays, correction, restart, dependency create/delete, dirty manifest suppression/discard, foreign diagnostics');
+  // A crashed owned server must not restart until the explicit command.
+  const children=fs.readFileSync('/proc/'+process.pid+'/task/'+process.pid+'/children','utf8').trim().split(' ').filter(Boolean);
+  const servers=children.filter(pid=>{try{return fs.readFileSync('/proc/'+pid+'/cmdline','utf8').includes('/lsp/server.py');}catch{return false;}});
+  assert.equal(servers.length,1);
+  process.kill(Number(servers[0]),'SIGKILL');
+  await until(async()=>!await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',uri),'crashed provider removed');
+  await new Promise(r=>setTimeout(r,300));
+  assert(!fs.existsSync('/proc/'+servers[0]));
+  await vscode.commands.executeCommand('mognitio.restartServer');
+  await until(async()=>(await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',uri))?.data?.length,'explicit crash recovery');
+
+  async function project(parent,name,namespace){
+   const folder=vscode.Uri.joinPath(parent,name);
+   await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folder,'src'));
+   await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(folder,'mognitio.toml'),Buffer.from('[project]\nname = "sample"\nroot_namespace = "'+namespace+'"\n'));
+   await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(folder,'src/sample.mgn'),Buffer.from('namespace '+namespace+';\nlet value: Int = 1;\n'));
+   return folder;
+  }
+  const base=vscode.workspace.workspaceFolders[0].uri;
+  const independent=await project(base,'independent','Other');
+  assert(vscode.workspace.updateWorkspaceFolders(1,0,{uri:independent,name:'Independent'}));
+  const other=vscode.Uri.joinPath(independent,'src/sample.mgn');
+  await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(other));
+  await until(async()=>(await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',other))?.data?.length,'independent nested src');
+  const overlap=await project(vscode.Uri.joinPath(base,'src'),'overlap','Overlap');
+  assert(vscode.workspace.updateWorkspaceFolders(2,0,{uri:overlap,name:'Overlap'}));
+  await until(async()=>!await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',uri),'overlap suspends original root');
+  assert((await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',other))?.data?.length);
+  await vscode.workspace.fs.delete(overlap,{recursive:true});
+  assert(vscode.workspace.updateWorkspaceFolders(2,1));
+  await until(async()=>(await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',uri))?.data?.length,'resolved overlap resumes root');
+  assert(vscode.workspace.updateWorkspaceFolders(1,1));
+  await vscode.workspace.fs.delete(independent,{recursive:true});
+  console.log('PASS installed extension: semantic paint on/off, overlays, correction, restart, dependency create/delete, dirty manifest suppression/discard, foreign diagnostics, crash/restart, root overlap/isolation/resumption');
 
 };

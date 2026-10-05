@@ -1,3 +1,4 @@
+import type { DocumentSelector } from 'vscode-languageclient/node';
 import * as vscode from 'vscode';
 import { spawn, execFile, ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -44,7 +45,7 @@ export class Session {
   constructor(
     readonly key: string,
     readonly folder: vscode.WorkspaceFolder | undefined,
-    readonly selector: vscode.DocumentSelector,
+    readonly selector: DocumentSelector,
     readonly output: vscode.LogOutputChannel,
     readonly expected: string | undefined,
   ) {}
@@ -79,7 +80,7 @@ export class Session {
       this.child = child;
       return {process: child, detached: true};
     }, {
-      documentSelector: this.selector as any,
+      documentSelector: this.selector,
       workspaceFolder: this.folder,
       outputChannel: this.output,
       diagnosticCollectionName: 'Mognitio',
