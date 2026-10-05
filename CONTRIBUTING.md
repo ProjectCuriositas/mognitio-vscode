@@ -35,7 +35,21 @@ whitespace. Report commands, outcomes, and any unverified behavior honestly.
 Use sanitized summaries when raw output contains local paths or other
 machine-specific details.
 
-Run the integration checks on the minimum supported VS Code version and a supported Linux desktop.
+Use Node.js 24 for development and the integration runner. The bundled client
+targets the Node.js runtime provided by the minimum supported VS Code version.
+Run the integration checks on VS Code 1.91.0 and a supported Linux desktop with
+a display (a headless X server is sufficient):
+
+- Set MOGNITIO_TEST_SERVER to a compatible server executable.
+- Set MOGNITIO_TEST_VSIX to the packaged VSIX, then run npm run integration.
+- Repeat with MOGNITIO_TEST_UNTRUSTED=1 to check Restricted Mode in a normal window.
+- For development toolchains only, omit MOGNITIO_TEST_VSIX and explicitly set
+  MOGNITIO_EXPECTED_IDENTITY to the generated identity.json.
+
+The tests observe actual semantic colors through the editor renderer, alongside
+Extension Host diagnostics and dependency events. Renderer evidence is stored
+under the ignored .vscode-test/evidence directory. Development identity overrides
+are disabled for production installations.
 Do not infer editor behavior from type checking alone.
 
 ## Change and release workflow
