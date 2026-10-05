@@ -56,6 +56,11 @@ under the ignored .vscode-test/evidence directory. Development identity override
 are disabled for production installations.
 Do not infer editor behavior from type checking alone.
 
+The session unit suite runs the complete Session module with mocked VS Code
+and client APIs, real disk reads, and a delayed file-close promise. It checks
+raw diagnostic receipt before a save followed by conversion completion after
+the save. This asynchronous race differs from the FIFO integration case.
+
 ## Change and release workflow
 
 Use short-lived feature branches such as feat/initial-language-support and

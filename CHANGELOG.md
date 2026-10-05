@@ -15,3 +15,6 @@ highlighting, diagnostics, and explicit language server restart.
 
 - Keep manifest diagnostics hidden after a disk-changing save until a new publish;
   restore cached positions only after disk-unchanged discard.
+
+- Order manifest diagnostic conversion against disk observations at receipt,
+  preventing a conversion started before save from restoring old positions.

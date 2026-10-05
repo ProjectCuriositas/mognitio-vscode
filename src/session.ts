@@ -158,9 +158,11 @@ export class Session {
       const belongs = uri.scheme === 'file' && !uri.authority && (this.folder
         ? this.manifest(uri) || (uri.fsPath.endsWith('.mgn') && contains(path.join(this.folder.uri.fsPath, 'src'), uri.fsPath))
         : this.key.slice('rootless:'.length).split('|').includes(key));
+      // Order receipt against save/discard/watch reads before any asynchronous work.
+      const manifestRead = this.manifest(uri) ? ++this.manifestRead : undefined;
       const valid = () => {
         if (this.stopped || epoch !== this.epoch || !belongs) return false;
-        if (this.manifest(uri)) return true;
+        if (this.manifest(uri)) return manifestRead === this.manifestRead;
         const current = vscode.workspace.textDocuments.find(d => d.uri.toString() === key);
         return current === document && (current ? params.version === current.version : params.version === undefined);
       };
@@ -175,7 +177,6 @@ export class Session {
         ({diagnostics, disk}) => {
           this.cache.set(key, diagnostics);
           if (this.manifest(uri)) {
-            ++this.manifestRead; // Supersede any earlier asynchronous restore.
             this.manifestDiagnostics.publish(disk, diagnostics);
             const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty);
             client.diagnostics?.set(uri, this.manifestDiagnostics.visible(dirty) ?? []);
