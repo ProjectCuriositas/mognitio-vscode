@@ -1,3 +1,18 @@
+/** Constant-space evidence collected while a raw notification establishes its first hash. */
+export class ManifestBaseline {
+  private observed = false;
+  private disk?: string;
+  private invalid = false;
+  observe(disk: string | undefined): void {
+    if (disk === undefined || (this.observed && disk !== this.disk)) this.invalid = true;
+    this.observed = true;
+    this.disk = disk;
+  }
+  accepts(disk: string): boolean {
+    return !this.invalid && (!this.observed || this.disk === disk);
+  }
+}
+
 /** A received manifest diagnostic set belongs to the observed disk contents. */
 export class ManifestDiagnostics<T> {
   private disk?: string;

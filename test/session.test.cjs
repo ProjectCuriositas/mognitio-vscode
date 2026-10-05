@@ -249,3 +249,52 @@ test('session stop defeats an in-flight manifest conversion', {timeout:3000}, as
   assert.equal(f.shown.length, count);
   assert.equal(f.session.cache.size, 0);
 });
+
+for (const heldSave of [false, true]) {
+  test('new disk baseline catches up from cached A: pending save=' + heldSave, {timeout:3000}, async t => {
+    const f = await fixture(t);
+    await f.publish([{message:'A error'}]);
+    assert.equal(f.shown.at(-1)[0].message, 'A error');
+    await f.save('disk B');
+    const saveClose = heldSave ? f.holdClose(1) : undefined;
+    const saving = f.session.restoreManifest(f.manifestUri);
+    if (saveClose) await saveClose.held;
+    else await saving;
+    const rawClose = f.holdClose(1);
+    const publishing = f.publish([{message:'B error'}]);
+    await rawClose.held;
+    f.document.isDirty = true;
+    await f.session.restoreManifest(f.manifestUri);
+    if (saveClose) await saveClose.release();
+    await saving;
+    await rawClose.release(); await publishing;
+    assert.deepEqual(f.shown.at(-1), []);
+    assert.equal(f.session.cache.get(f.manifestUri.toString())?.[0]?.message, 'B error');
+    f.document.isDirty = false;
+    await f.session.restoreManifest(f.manifestUri);
+    assert.equal(f.shown.at(-1)[0].message, 'B error');
+  });
+}
+
+for (const history of [['disk B','disk B'], ['disk C','disk B'], [null,'disk B']]) {
+  test('baseline catch-up preserves observation history: ' + JSON.stringify(history), {timeout:3000}, async t => {
+    const f = await fixture(t);
+    await f.publish([{message:'A error'}]);
+    await f.save('disk B');
+    const barrier = f.holdClose(1);
+    const publishing = f.publish([{message:'B error'}]);
+    await barrier.held;
+    f.document.isDirty = true;
+    for (const disk of history) {
+      if (disk === null) await f.remove();
+      else await f.save(disk);
+      await f.session.restoreManifest(f.manifestUri);
+    }
+    await barrier.release(); await publishing;
+    const accepted = history.every(disk => disk === 'disk B');
+    assert.equal(f.session.cache.has(f.manifestUri.toString()), accepted);
+    f.document.isDirty = false;
+    await f.session.restoreManifest(f.manifestUri);
+    assert.deepEqual(f.shown.at(-1), accepted ? [{message:'B error'}] : []);
+  });
+}

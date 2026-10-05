@@ -61,7 +61,11 @@ and client APIs, real disk reads, and a delayed file-close promise. It checks
 raw diagnostic receipt before a save followed by conversion completion after
 the save. It pairs that case with disk-unchanged editing/discard, pending
 observations, unreadable input, changed-back contents, newer empty diagnostics,
-and session stop. These asynchronous races differ from the FIFO integration case.
+and session stop. Baseline-transition fixtures first populate an old cache,
+then delay a saved-content observation and the new notification's first hash;
+matching observations must preserve the new result, while intervening changes
+or unreadable input must still reject it. These asynchronous races differ from
+the FIFO integration case.
 
 ## Change and release workflow
 
