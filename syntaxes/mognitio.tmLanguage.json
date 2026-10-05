@@ -1,0 +1,34 @@
+{
+  "scopeName": "source.mognitio",
+  "name": "Mognitio",
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.mognitio",
+      "begin": "//",
+      "end": "$"
+    },
+    {
+      "name": "string.quoted.double.mognitio",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.mognitio",
+          "match": "\\\\(?:[\"\\\\nrt0]|u\\{[0-9a-fA-F]{1,6}\\})"
+        }
+      ]
+    },
+    {
+      "name": "keyword.control.mognitio",
+      "match": "\\b(?:assert|namespace|use|public|alias|implements|as|branch|break|continue|contract|discard|else|function|witness|let|loop|on|over|panic|product|return|sum|template|try|type|var|when|while|true|false|unit)\\b"
+    },
+    {
+      "name": "constant.numeric.mognitio",
+      "match": "\\b(?:0|[1-9][0-9]*)\\b"
+    },
+    {
+      "name": "punctuation.mognitio",
+      "match": "[{}\\[\\]();,:]"
+    }
+  ]
+}

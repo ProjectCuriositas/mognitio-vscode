@@ -1,0 +1,9 @@
+**
+!package.json
+!README.md
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!language-configuration.json
+!syntaxes/**
+!dist/extension.js
+!CHANGELOG.md

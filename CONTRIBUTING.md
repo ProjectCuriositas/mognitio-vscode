@@ -35,14 +35,38 @@ whitespace. Report commands, outcomes, and any unverified behavior honestly.
 Use sanitized summaries when raw output contains local paths or other
 machine-specific details.
 
-Run the integration checks on the minimum supported VS Code version and a supported Linux desktop.
+Use Node.js 24 for development and the integration runner. The bundled client
+targets the Node.js runtime provided by the minimum supported VS Code version.
+Run the integration checks on VS Code 1.91.0 and a supported Linux desktop with
+a display (a headless X server is sufficient):
+
+- Set MOGNITIO_TEST_SERVER to a compatible server executable.
+- Set MOGNITIO_TEST_VSIX to the packaged VSIX, then run npm run integration.
+- Repeat with MOGNITIO_TEST_UNTRUSTED=1 to check Restricted Mode in a normal window.
+- For development toolchains only, omit MOGNITIO_TEST_VSIX and explicitly set
+  MOGNITIO_EXPECTED_IDENTITY to the generated identity.json.
+
+The tests observe actual semantic colors through the editor renderer, alongside
+Extension Host diagnostics and dependency events. Renderer evidence is stored
+under the ignored .vscode-test/evidence directory. Development identity overrides
+are disabled for production installations.
 Do not infer editor behavior from type checking alone.
 
 ## Change and release workflow
 
-Use short-lived work branches and pull requests. Squash version-specific work
-into the milestone branch. Merge a milestone into main and publish an immutable
-release tag only after explicit release approval. Do not push changes directly
-to main or a milestone branch. Repository-wide documentation uses a separate
-pull request based on main.
+Use short-lived feature branches such as feat/initial-language-support and
+pull requests targeting main. Squash reviewed and verified pull requests into
+main, then delete the merged feature branch. Do not push directly to main.
+The extension does not use compiler milestone branches such as mognitio/v015.
 
+Version the extension independently using SemVer in package.json and the lockfile.
+A language release does not automatically change the extension version. Record
+supported language server versions in the README compatibility table and keep
+the runtime compatibility check and its tests consistent with that table.
+Update the extension version for extension changes according to its own API and
+compatibility impact. Record those changes in CHANGELOG.md.
+
+Merging a feature is not a release. Publish an immutable extension version tag,
+GitHub Release, VSIX release, or Marketplace update only after explicit approval
+for that extension release. Language release approval does not automatically
+authorize a Marketplace publication.
