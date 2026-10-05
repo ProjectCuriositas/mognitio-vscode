@@ -43,6 +43,13 @@ try:
             if key.lower() == b"content-length":
                 length = int(value)
         body = child.stdout.read(length)
+        if (gate / "pause").exists():
+            (gate / "paused").write_text("ready")
+            deadline = time.monotonic() + 15
+            while not (gate / "resume").exists():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Manifest observation fixture timed out")
+                time.sleep(0.01)
         message = json.loads(body)
         delayed = False
         arm = gate / "arm"

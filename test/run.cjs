@@ -15,7 +15,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
   'security.workspace.trust.enabled':untrusted,'security.workspace.trust.startupPrompt':'never','workbench.startupEditor':'none'
  }));
  const diagnosticGate=path.join(user,'diagnostic-gate');fs.mkdirSync(diagnosticGate);
- if(!untrusted && process.env.MOGNITIO_TEST_DELAY_DIAGNOSTICS==='1'){
+ if(!untrusted && (process.env.MOGNITIO_TEST_DELAY_DIAGNOSTICS==='1' || process.env.MOGNITIO_TEST_MANIFEST_SAVE==='1')){
   const proxy=path.join(user,'diagnostic-proxy');
   fs.copyFileSync(path.resolve('test/diagnostic-proxy.py'),proxy);fs.chmodSync(proxy,0o755);
   process.env.MOGNITIO_PROXY_SERVER=process.env.MOGNITIO_TEST_SERVER;
@@ -59,7 +59,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
    });}
   }else await runTests({vscodeExecutablePath:executable,extensionDevelopmentPath:development,extensionTestsPath:path.resolve('test/editor.cjs'),
    launchArgs:[workspaceFile,'--user-data-dir='+user,'--extensions-dir='+extensions,'--remote-debugging-port='+port,'--skip-welcome','--skip-release-notes','--disable-gpu','--no-sandbox'],
-   extensionTestsEnv:{MOGNITIO_EXPECTED_IDENTITY:process.env.MOGNITIO_EXPECTED_IDENTITY||'',MOGNITIO_PAINT_DIRECTORY:paint,MOGNITIO_DIAGNOSTIC_GATE:process.env.MOGNITIO_TEST_DELAY_DIAGNOSTICS==='1'?diagnosticGate:''}});
+   extensionTestsEnv:{MOGNITIO_EXPECTED_IDENTITY:process.env.MOGNITIO_EXPECTED_IDENTITY||'',MOGNITIO_PAINT_DIRECTORY:paint,MOGNITIO_DIAGNOSTIC_GATE:process.env.MOGNITIO_TEST_DELAY_DIAGNOSTICS==='1'?diagnosticGate:'',MOGNITIO_MANIFEST_GATE:process.env.MOGNITIO_TEST_MANIFEST_SAVE==='1'?diagnosticGate:''}});
   await observation;if(observationError)throw observationError;passed=true;
  }finally{done.finished=true;if(passed){fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});fs.rmSync(user,{recursive:true,force:true,maxRetries:5,retryDelay:100});}else console.log('Retained fixture',root,user);}
 })().catch(error=>{console.error(error);process.exit(1);});

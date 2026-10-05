@@ -4,12 +4,14 @@ import { spawn, execFile, ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { promises as fs, constants } from 'node:fs';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import {
   LanguageClient, InitializeParams, ErrorAction, CloseAction, State,
   SemanticTokensRegistrationType, SemanticTokensRefreshRequest, PublishDiagnosticsNotification
 } from 'vscode-languageclient/node';
 import { compatibleVersion, compatibleCapabilities, contains } from './policy';
 import { DiagnosticGate } from './diagnostics';
+import { ManifestDiagnostics } from './manifest';
 
 const execute = promisify(execFile);
 class Client extends LanguageClient {
@@ -42,6 +44,8 @@ export class Session {
   stopped = false;
   cache = new Map<string, readonly vscode.Diagnostic[]>();
   private diagnostics = new DiagnosticGate();
+  private manifestDiagnostics = new ManifestDiagnostics<readonly vscode.Diagnostic[]>();
+  private manifestRead = 0;
   private watchers: vscode.Disposable[] = [];
   private cancellations = new Set<NodeJS.Timeout>();
   constructor(
@@ -61,14 +65,36 @@ export class Session {
   manifest(uri: vscode.Uri): boolean {
     return !!this.folder && uri.fsPath === path.join(this.folder.uri.fsPath, 'mognitio.toml');
   }
-  restoreManifest(): void {
-    if (!this.client) return;
-    for (const [uri, diagnostics] of this.cache) {
-      const parsed = vscode.Uri.parse(uri);
-      if (!this.manifest(parsed)) continue;
-      const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === uri && d.isDirty);
-      this.client.diagnostics?.set(parsed, dirty ? [] : diagnostics);
-    }
+  private async manifestDisk(): Promise<string | undefined> {
+    if (!this.folder) return undefined;
+    try {
+      const file = await fs.open(path.join(this.folder.uri.fsPath, 'mognitio.toml'), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        const stat = await file.stat();
+        if (!stat.isFile() || stat.size > 4 * 1024 * 1024) return undefined;
+        const hash = createHash('sha256'), buffer = new Uint8Array(64 * 1024);
+        let total = 0;
+        while (true) {
+          const {bytesRead} = await file.read(buffer, 0, buffer.length, null);
+          if (!bytesRead) return hash.digest('hex');
+          total += bytesRead;
+          if (total > 4 * 1024 * 1024) return undefined;
+          hash.update(buffer.subarray(0, bytesRead));
+        }
+      } finally {await file.close();}
+    } catch {return undefined;}
+  }
+  async restoreManifest(changed?: vscode.Uri): Promise<void> {
+    if (!this.client || !this.folder || this.stopped || (changed && !this.manifest(changed))) return;
+    const uri = vscode.Uri.joinPath(this.folder.uri, 'mognitio.toml');
+    const read = ++this.manifestRead;
+    // Dirty-to-clean may be a save. Never restore before checking disk contents.
+    this.client.diagnostics?.set(uri, []);
+    const disk = await this.manifestDisk();
+    if (this.stopped || read !== this.manifestRead) return;
+    this.manifestDiagnostics.observe(disk);
+    const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty);
+    this.client.diagnostics?.set(uri, this.manifestDiagnostics.visible(dirty) ?? []);
   }
   async start(): Promise<void> {
     const command = await executable();
@@ -139,11 +165,21 @@ export class Session {
         return current === document && (current ? params.version === current.version : params.version === undefined);
       };
       void this.diagnostics.publish(key, valid,
-        () => client.protocol2CodeConverter.asDiagnostics(params.diagnostics),
-        diagnostics => {
+        async () => {
+          const manifest = this.manifest(uri);
+          const before = manifest ? await this.manifestDisk() : undefined;
+          const diagnostics = await client.protocol2CodeConverter.asDiagnostics(params.diagnostics);
+          const after = manifest ? await this.manifestDisk() : undefined;
+          return {diagnostics, disk: before === after ? after : undefined};
+        },
+        ({diagnostics, disk}) => {
           this.cache.set(key, diagnostics);
-          const dirty = this.manifest(uri) && vscode.workspace.textDocuments.some(d => d.uri.toString() === key && d.isDirty);
-          client.diagnostics?.set(uri, dirty ? [] : diagnostics);
+          if (this.manifest(uri)) {
+            ++this.manifestRead; // Supersede any earlier asynchronous restore.
+            this.manifestDiagnostics.publish(disk, diagnostics);
+            const dirty = vscode.workspace.textDocuments.some(d => d.uri.toString() === uri.toString() && d.isDirty);
+            client.diagnostics?.set(uri, this.manifestDiagnostics.visible(dirty) ?? []);
+          } else client.diagnostics?.set(uri, diagnostics);
         }).catch(error => this.output.error('Diagnostic conversion failed: ' + String(error)));
     }));
     let timer: NodeJS.Timeout | undefined;
@@ -168,6 +204,7 @@ export class Session {
         const changed = async (uri: vscode.Uri, type: number) => {
           if (this.stopped) return;
           this.invalidate();
+          if (this.manifest(uri)) await this.restoreManifest(uri);
           await client.sendNotification('workspace/didChangeWatchedFiles', {changes: [{uri: uri.toString(), type}]});
         };
         this.watchers.push(watcher, watcher.onDidCreate(u => {void changed(u, 1);}),
@@ -177,7 +214,7 @@ export class Session {
   }
   async stop(): Promise<void> {
     if (this.stopped) return;
-    this.stopped = true; ++this.epoch; this.cache.clear(); this.diagnostics.clear();
+    this.stopped = true; ++this.epoch; this.cache.clear(); this.diagnostics.clear(); this.manifestDiagnostics.clear(); ++this.manifestRead;
     this.watchers.forEach(w => w.dispose());
     this.cancellations.forEach(clearTimeout);
     const child = this.child;

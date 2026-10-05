@@ -12,3 +12,6 @@ highlighting, diagnostics, and explicit language server restart.
 
 - Reject diagnostics from an older open-document version before conversion and
   immediately before display, retaining the latest receive order per URI.
+
+- Keep manifest diagnostics hidden after a disk-changing save until a new publish;
+  restore cached positions only after disk-unchanged discard.

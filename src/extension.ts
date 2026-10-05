@@ -62,9 +62,9 @@ export function activate(extensionContext: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeWorkspaceFolders(schedule),
     vscode.workspace.onDidGrantWorkspaceTrust(schedule),
     vscode.workspace.onDidOpenTextDocument(schedule),
-    vscode.workspace.onDidCloseTextDocument(() => {sessions.forEach(s => s.restoreManifest()); schedule();}),
-    vscode.workspace.onDidChangeTextDocument(() => {sessions.forEach(s => s.restoreManifest());}),
-    vscode.workspace.onDidSaveTextDocument(() => {sessions.forEach(s => s.restoreManifest());}),
+    vscode.workspace.onDidCloseTextDocument(doc => {sessions.forEach(s => {void s.restoreManifest(doc.uri);}); schedule();}),
+    vscode.workspace.onDidChangeTextDocument(event => {sessions.forEach(s => {void s.restoreManifest(event.document.uri);});}),
+    vscode.workspace.onDidSaveTextDocument(doc => {sessions.forEach(s => {void s.restoreManifest(doc.uri);});}),
     vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('mognitio.serverPath')) void restart();
       else if (e.affectsConfiguration('editor.semanticHighlighting')) sessions.forEach(s => s.invalidate());

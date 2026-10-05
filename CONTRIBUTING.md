@@ -45,6 +45,8 @@ a display (a headless X server is sufficient):
 - Repeat with MOGNITIO_TEST_UNTRUSTED=1 to check Restricted Mode in a normal window.
 - Repeat with MOGNITIO_TEST_DELAY_DIAGNOSTICS=1 to delay real diagnostics in FIFO
   order until the target document changes and verify that stale errors never appear.
+- Repeat with MOGNITIO_TEST_MANIFEST_SAVE=1 to save a corrected manifest while
+  subsequent server frames are blocked and check that old cached errors stay hidden.
 - For development toolchains only, omit MOGNITIO_TEST_VSIX and explicitly set
   MOGNITIO_EXPECTED_IDENTITY to the generated identity.json.
 
