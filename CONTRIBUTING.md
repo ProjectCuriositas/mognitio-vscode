@@ -85,3 +85,8 @@ Merging a feature is not a release. Publish an immutable extension version tag,
 GitHub Release, VSIX release, or Marketplace update only after explicit approval
 for that extension release. Language release approval does not automatically
 authorize a Marketplace publication.
+
+The installed VSIX disable fixture uses MOGNITIO_TEST_DISABLED=1. The normal
+editor run also checks that owned server PIDs disappear after Extension Host
+shutdown. Lifecycle unit fixtures separately measure startup, cancellation,
+and shutdown deadlines, and call the deactivation entry point.
