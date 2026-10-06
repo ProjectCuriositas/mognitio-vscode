@@ -3,7 +3,7 @@
   "displayName": "Mognitio",
   "description": "Language support for Mognitio",
   "version": "0.1.0",
-  "publisher": "ProjectCuriositas",
+  "publisher": "mognitio",
   "license": "MIT",
   "engines": {
     "vscode": "^1.91.0"

@@ -28,12 +28,15 @@ Mognitio toolchain separately. Make mognitio-lsp available on PATH, or set
 mognitio.serverPath to its absolute executable path in User settings.
 Workspace settings cannot select an executable.
 
-The initial 0.1.0 preview is distributed through [GitHub Releases](https://github.com/ProjectCuriositas/mognitio-vscode/releases).
-Preview validation status is recorded in the release notes.
+Install **Mognitio** by the **Mognitio** publisher (`mognitio.mognitio`) from the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=mognitio.mognitio),
+or install the exact VSIX from [GitHub Releases](https://github.com/ProjectCuriositas/mognitio-vscode/releases)
+with **Extensions: Install from VSIX**.
 
-Install a published VSIX with **Extensions: Install from VSIX**. A locally
-built VSIX can be installed with the same command. No Marketplace publication
-is implied by the presence of this repository.
+The GitHub-only preview used the separate ID `ProjectCuriositas.mognitio`.
+Uninstall that preview before installing the stable extension; it is not an
+in-place Marketplace upgrade. The stable release remains independently versioned
+as 0.1.0. Release assets and their checksums are immutable.
 
 Open a project folder containing mognitio.toml and src/. Semantic analysis
 requires workspace trust; untrusted workspaces retain lexical highlighting.

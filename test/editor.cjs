@@ -6,7 +6,7 @@ async function until(fn, label) {
   throw new Error('Timeout: '+label);
 }
 exports.run=async()=>{
-  const extension=vscode.extensions.getExtension('ProjectCuriositas.mognitio');
+  const extension=vscode.extensions.getExtension('mognitio.mognitio');
   assert(extension);await extension.activate();
   const uri=vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri,'src/sample.mgn');
   const doc=await vscode.workspace.openTextDocument(uri);
