@@ -55,7 +55,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
    await runTests({vscodeExecutablePath:executable,extensionDevelopmentPath:development,
     extensionTestsPath:path.resolve('test/disabled.cjs'),
     launchArgs:[workspaceFile,'--user-data-dir='+user,'--extensions-dir='+extensions,
-     '--disable-extension','ProjectCuriositas.mognitio','--skip-welcome','--skip-release-notes','--disable-gpu','--no-sandbox'],
+     '--disable-extension','mognitio.mognitio','--skip-welcome','--skip-release-notes','--disable-gpu','--no-sandbox'],
     extensionTestsEnv:{MOGNITIO_DISABLED_MARKER:marker}});
   }else if(untrusted){
    const marker=path.join(user,'server-started'),probe=path.join(user,'probe-server');

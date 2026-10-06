@@ -1,9 +1,11 @@
 # Changelog
 
-## 0.1.0 — pre-release
+## 0.1.0
 
-First public preview, distributed as a pre-release VSIX through GitHub Releases.
-Acceptance testing is in progress. Future releases use a new extension version.
+First stable release under the Mognitio publisher (`mognitio.mognitio`).
+The GitHub-only preview used `ProjectCuriositas.mognitio`; uninstall that preview
+before installing this release so only one language client runs. Future extension
+releases use a new extension version independently of the compiler.
 
 Initial Mognitio language support: file association, lexical and semantic
 highlighting, diagnostics, and explicit language server restart.
