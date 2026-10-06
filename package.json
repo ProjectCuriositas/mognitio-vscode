@@ -2,7 +2,7 @@
   "name": "mognitio",
   "displayName": "Mognitio",
   "description": "Language support for Mognitio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "mognitio",
   "license": "MIT",
   "engines": {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1
+
+- Accept the formal Mognitio 1.0.0 language server while retaining 0.15.x support.
+- Keep exact development-identity checks and reject unverified future versions,
+  prereleases and build-metadata variants in production.
+- No change to editor capabilities, minimum VS Code, publisher or platform scope.
+
 ## 0.1.0
 
 First stable release under the Mognitio publisher (`mognitio.mognitio`).
