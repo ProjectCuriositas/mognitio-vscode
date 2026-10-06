@@ -154,4 +154,12 @@ exports.run=async()=>{
   await vscode.workspace.fs.delete(independent,{recursive:true});
   console.log('PASS installed extension: semantic paint on/off, overlays, correction, restart, dependency create/delete, dirty manifest suppression/discard, foreign diagnostics, crash/restart, root overlap/isolation/resumption');
 
+
+  // The runner checks these owned PIDs after Extension Host shuts down.
+  const owned=fs.readFileSync('/proc/'+process.pid+'/task/'+process.pid+'/children','utf8')
+    .trim().split(' ').filter(Boolean).filter(pid=>{
+      try{return fs.readFileSync('/proc/'+pid+'/cmdline','utf8').includes('/lsp/server.py');}catch{return false;}
+    });
+  assert(owned.length);
+  fs.writeFileSync(path.join(paint,'owned-servers.json'),JSON.stringify(owned));
 };

@@ -2,6 +2,7 @@ const {runTests,downloadAndUnzipVSCode,resolveCliArgsFromVSCodeExecutablePath}=r
 const {spawnSync,spawn}=require('node:child_process');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
 (async()=>{
+ const disabled=process.env.MOGNITIO_TEST_DISABLED==='1';
  const untrusted=process.env.MOGNITIO_TEST_UNTRUSTED==='1';
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'mognitio-editor-'));
  fs.mkdirSync(path.join(root,'src'));fs.mkdirSync(path.join(root,'.vscode'));
@@ -38,14 +39,25 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
  const workspaceFile=path.join(user,'fixture.code-workspace');
  fs.writeFileSync(workspaceFile,JSON.stringify({folders:[{path:root}]}));
  const paint=path.resolve('.vscode-test/evidence');fs.mkdirSync(paint,{recursive:true});
- for(const file of ['on','off','on-observed','off-observed'])fs.rmSync(path.join(paint,file),{force:true});
+ for(const file of ['on','off','on-observed','off-observed','owned-servers.json'])fs.rmSync(path.join(paint,file),{force:true});
  const port=await new Promise(resolve=>{const server=net.createServer();server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});
  let passed=false;const done={finished:false};
- const observation=require('./paint.cjs').observe(port,paint,done,untrusted);
+ const observation=disabled?Promise.resolve():require('./paint.cjs').observe(port,paint,done,untrusted);
  // Observe rejection immediately while the editor test is still running.
  let observationError;observation.catch(error=>{observationError=error;});
  try{
-  if(untrusted){
+  if(disabled){
+   if(!process.env.MOGNITIO_TEST_VSIX)throw new Error('Disabled acceptance requires an installed VSIX');
+   const marker=path.join(user,'server-started'),probe=path.join(user,'probe-server');
+   fs.writeFileSync(probe,'#!/bin/sh\ntouch "'+marker+'"\necho "mognitio-lsp 0.15.0"\n',{mode:0o755});
+   const settingsPath=path.join(user,'User/settings.json');const settings=JSON.parse(fs.readFileSync(settingsPath));
+   settings['mognitio.serverPath']=probe;fs.writeFileSync(settingsPath,JSON.stringify(settings));
+   await runTests({vscodeExecutablePath:executable,extensionDevelopmentPath:development,
+    extensionTestsPath:path.resolve('test/disabled.cjs'),
+    launchArgs:[workspaceFile,'--user-data-dir='+user,'--extensions-dir='+extensions,
+     '--disable-extension','ProjectCuriositas.mognitio','--skip-welcome','--skip-release-notes','--disable-gpu','--no-sandbox'],
+    extensionTestsEnv:{MOGNITIO_DISABLED_MARKER:marker}});
+  }else if(untrusted){
    const marker=path.join(user,'server-started'),probe=path.join(user,'probe-server');
    fs.writeFileSync(probe,'#!/bin/sh\ntouch "'+marker+'"\necho "mognitio-lsp 0.15.0"\n',{mode:0o755});
    const settingsPath=path.join(user,'User/settings.json');
@@ -60,6 +72,15 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
   }else await runTests({vscodeExecutablePath:executable,extensionDevelopmentPath:development,extensionTestsPath:path.resolve('test/editor.cjs'),
    launchArgs:[workspaceFile,'--user-data-dir='+user,'--extensions-dir='+extensions,'--remote-debugging-port='+port,'--skip-welcome','--skip-release-notes','--disable-gpu','--no-sandbox'],
    extensionTestsEnv:{MOGNITIO_EXPECTED_IDENTITY:process.env.MOGNITIO_EXPECTED_IDENTITY||'',MOGNITIO_PAINT_DIRECTORY:paint,MOGNITIO_DIAGNOSTIC_GATE:process.env.MOGNITIO_TEST_DELAY_DIAGNOSTICS==='1'?diagnosticGate:'',MOGNITIO_MANIFEST_GATE:process.env.MOGNITIO_TEST_MANIFEST_SAVE==='1'?diagnosticGate:''}});
-  await observation;if(observationError)throw observationError;passed=true;
+  await observation;if(observationError)throw observationError;
+  const ownedFile=path.join(paint,'owned-servers.json');
+  if(fs.existsSync(ownedFile)){
+   const owned=JSON.parse(fs.readFileSync(ownedFile));
+   const deadline=Date.now()+3500;
+   while(owned.some(pid=>fs.existsSync('/proc/'+pid))&&Date.now()<deadline)await new Promise(r=>setTimeout(r,50));
+   if(owned.some(pid=>fs.existsSync('/proc/'+pid)))throw new Error('Owned server survived Extension Host shutdown');
+   console.log('PASS installed extension shutdown: all recorded owned server processes reaped');
+  }
+  passed=true;
  }finally{done.finished=true;if(passed){fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});fs.rmSync(user,{recursive:true,force:true,maxRetries:5,retryDelay:100});}else console.log('Retained fixture',root,user);}
 })().catch(error=>{console.error(error);process.exit(1);});
