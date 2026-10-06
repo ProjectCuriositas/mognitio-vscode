@@ -35,8 +35,8 @@ with **Extensions: Install from VSIX**.
 
 The GitHub-only preview used the separate ID `ProjectCuriositas.mognitio`.
 Uninstall that preview before installing the stable extension; it is not an
-in-place Marketplace upgrade. The stable release remains independently versioned
-as 0.1.0. Release assets and their checksums are immutable.
+in-place Marketplace upgrade. Stable extension versions evolve independently
+of compiler versions. Release assets and their checksums are immutable.
 
 Open a project folder containing mognitio.toml and src/. Semantic analysis
 requires workspace trust; untrusted workspaces retain lexical highlighting.
