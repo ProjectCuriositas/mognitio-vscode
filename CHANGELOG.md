@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — pre-release
+
+First public preview, distributed as a pre-release VSIX through GitHub Releases.
+Acceptance testing is in progress. Future releases use a new extension version.
 
 Initial Mognitio language support: file association, lexical and semantic
 highlighting, diagnostics, and explicit language server restart.

@@ -72,7 +72,8 @@
     "compile": "node scripts/build.mjs",
     "test": "node --test test/*.test.cjs",
     "package": "npm run compile && vsce package --no-dependencies",
-    "integration": "node test/run.cjs"
+    "integration": "node test/run.cjs",
+    "package:prerelease": "npm run compile && vsce package --no-dependencies --pre-release"
   },
   "dependencies": {
     "vscode-languageclient": "10.1.1"

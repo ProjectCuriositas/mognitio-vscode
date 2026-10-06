@@ -28,6 +28,9 @@ Mognitio toolchain separately. Make mognitio-lsp available on PATH, or set
 mognitio.serverPath to its absolute executable path in User settings.
 Workspace settings cannot select an executable.
 
+The initial 0.1.0 preview is distributed through [GitHub Releases](https://github.com/ProjectCuriositas/mognitio-vscode/releases).
+Preview validation status is recorded in the release notes.
+
 Install a published VSIX with **Extensions: Install from VSIX**. A locally
 built VSIX can be installed with the same command. No Marketplace publication
 is implied by the presence of this repository.
