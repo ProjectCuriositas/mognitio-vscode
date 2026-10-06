@@ -6,8 +6,8 @@ const text = buildSync({entryPoints:['src/policy.ts'],bundle:true,platform:'node
 const mod = new Module('policy'); mod._compile(text, 'policy.cjs');
 const p = mod.exports;
 test('formal compatible versions and exact development identities', () => {
-  for (const value of ['0.15.0','0.15.10']) assert.equal(p.compatibleVersion(value), true);
-  for (const value of ['0.16.0','0.14.9','0.15.0-dev.0','0.15.00','0.15.0+wrong',null]) assert.equal(p.compatibleVersion(value), false);
+  for (const value of ['0.15.0','0.15.10','1.0.0']) assert.equal(p.compatibleVersion(value), true);
+  for (const value of ['1.0.1','1.1.0','2.0.0','1.0.0-dev.0','1.0.0+wrong','1.00.0','01.0.0','0.16.0','0.14.9','0.15.0-dev.0','0.15.00','0.15.0+wrong',null]) assert.equal(p.compatibleVersion(value), false);
   assert.equal(p.compatibleVersion('0.15.0-dev.0+g1','0.15.0-dev.0+g2'),false);
 });
 test('all overlap members are rejected; independent source roots remain', () => {
