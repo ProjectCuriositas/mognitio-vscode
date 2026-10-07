@@ -7,7 +7,7 @@ compiler and language server.
 
 | Extension | Mognitio language server | VS Code | Platform |
 |---|---|---|---|
-| 0.1.1 | 0.15.x formal releases and 1.0.0 | 1.91.0 or later | Linux amd64 desktop; Ubuntu 24.04 and 26.04 |
+| 0.1.2 | 0.15.x formal releases, 1.0.0 and 1.1.0 | 1.91.0 or later | Linux amd64 desktop; Ubuntu 24.04 and 26.04 |
 
 Extension versions and language versions are independent. Development toolchains
 and versions outside the listed range are rejected by the distributed extension.

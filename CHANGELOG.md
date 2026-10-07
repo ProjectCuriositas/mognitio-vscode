@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+- Accept the formal Mognitio 1.1.0 language server while retaining 0.15.x and 1.0.0 support.
+- Continue rejecting unverified versions, prereleases and build-metadata variants in production.
+- Reject malformed legacy server versions with a trailing line terminator.
+- Preserve exact development-identity checks, editor capabilities and platform requirements.
+
 ## 0.1.1
 
 - Accept the formal Mognitio 1.0.0 language server while retaining 0.15.x support.

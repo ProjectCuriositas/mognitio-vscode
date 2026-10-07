@@ -2,7 +2,8 @@ import * as path from 'node:path';
 export function compatibleVersion(version: unknown, expectedDevelopment?: string): boolean {
   if (typeof version !== 'string') return false;
   if (expectedDevelopment !== undefined) return version === expectedDevelopment;
-  return /^0\.15\.(0|[1-9][0-9]*)$/.test(version) || version === '1.0.0';
+  const legacy = /^0\.15\.(0|[1-9][0-9]*)$/.exec(version);
+  return legacy?.[0] === version || version === '1.0.0' || version === '1.1.0';
 }
 export function contains(root: string, file: string): boolean {
   const relative = path.relative(root, file);
