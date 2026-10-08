@@ -35,3 +35,14 @@ test('independent URI publishes do not invalidate each other',async()=>{
  await gate.publish('b',()=>true,async()=>['b'],d=>seen.push(d));
  a.resolve(['a']);await job;assert.deepEqual(seen,[['b'],['a']]);
 });
+
+test('retired URI bookkeeping cannot alias a later publish after reacquisition',async()=>{
+ const gate=new DiagnosticGate(),old=deferred(),fresh=deferred(),shown=[];
+ const retired=gate.publish('a',()=>true,()=>old.promise,value=>shown.push(value));
+ gate.forget('a');
+ assert.equal(gate.sequence.size,0);
+ const current=gate.publish('a',()=>true,()=>fresh.promise,value=>shown.push(value));
+ old.resolve('old');await retired;assert.deepEqual(shown,[]);
+ fresh.resolve('new');await current;assert.deepEqual(shown,['new']);
+ gate.forget('a');assert.equal(gate.sequence.size,0);
+});

@@ -79,6 +79,7 @@ export class Session {
       if ([...open.openDocuments].includes(owned.document)) await close.getProvider(owned.document)?.send(owned.document);
       open.unregister(id); change.unregister(id); close.unregister(id);
       this.cache.delete(key);
+      this.diagnostics.forget(key);
       client.diagnostics?.delete(owned.document.uri);
     }
     for (const [key, document] of desired) if (!this.rootless.has(key)) {
