@@ -101,3 +101,9 @@ Manager unit tests also exercise ordinary document-close events.
 The grammar suite uses the actual TextMate/Oniguruma tokenizer to check valid
 escapes and recovery after unterminated strings. These are development-only
 dependencies and are not included in the packaged extension.
+
+Refresh-order tests hold manifest disk reads and transport completion separately,
+including overlapping changes, server refresh requests, and failed notifications.
+The installed-VSIX standalone fixture checks actual semantic token ranges for
+both files, after a sibling closes, and after project-to-standalone transfer and
+an edit. The syntax-only server intentionally returns keyword tokens only.

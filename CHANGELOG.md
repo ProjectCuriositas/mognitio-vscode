@@ -2,6 +2,10 @@
 
 ## 0.1.2
 
+- Defer semantic token refresh until pending document and watched-file changes are synchronized; suppress requests during disk observation and stop on notification failure.
+- Identify conflicting source roots and their overlap reason without repeating unchanged warnings.
+- Offer installation documentation and server-path settings from launch failure messages.
+
 - Keep the standalone language server running as documents are added or removed, with exact per-document routing and stale-result rejection during workspace transfers.
 - Name sessions omitted by the window budget and explain unsupported environments in the Output channel without repeated warnings.
 - Log the verified server version after connection and recover lexical highlighting at the end of an unterminated string's line.
