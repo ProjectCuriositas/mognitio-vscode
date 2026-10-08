@@ -11,6 +11,7 @@ let output: vscode.LogOutputChannel;
 let context: vscode.ExtensionContext;
 let reportedEnvironment: string | undefined;
 let reportedBudget = '';
+let reportedConflicts = '';
 async function reconcile(): Promise<void> {
   const wanted = new Map<string, {folder?: vscode.WorkspaceFolder, selector: DocumentSelector, documents?: readonly vscode.TextDocument[]}>();
   const folders = [...(vscode.workspace.workspaceFolders ?? [])].filter(f => f.uri.scheme === 'file');
@@ -33,7 +34,11 @@ async function reconcile(): Promise<void> {
       && !folders.some(f => contains(path.join(f.uri.fsPath, 'src'), d.uri.fsPath)));
     if (rootless.length) wanted.set('rootless', {selector: [], documents: rootless});
   }
-  if (rejected.size) output.warn('Overlapping source roots: project analysis is disabled for all conflicting folders.');
+  const conflictState = [...rejected].map(i => folders[i].uri.toString() + ' -> ' + roots[i]).sort().join('; ');
+  if (conflictState && conflictState !== reportedConflicts) output.warn(
+    'Overlapping source roots (equal or containing another source root): ' + conflictState +
+    '. Project analysis is disabled for these folders. Remove a conflicting folder or use independent source roots.');
+  reportedConflicts = conflictState;
   const skipped = [...wanted.entries()].slice(4);
   const budget = skipped.map(([key, config]) => config.folder
     ? 'workspace ' + config.folder.uri.toString()
@@ -62,9 +67,14 @@ async function reconcile(): Promise<void> {
     catch (error) {
       output.error(String(error));
       await session.stop();
-      void vscode.window.showWarningMessage('Mognitio: ' + String(error));
+      void showLaunchFailure(error).catch(e => output.error(String(e)));
     }
   }
+}
+async function showLaunchFailure(error: unknown): Promise<void> {
+  const choice = await vscode.window.showWarningMessage('Mognitio: ' + String(error), 'Installation Guide', 'Open Settings');
+  if (choice === 'Installation Guide') await vscode.env.openExternal(vscode.Uri.parse('https://github.com/ProjectCuriositas/Mognitio#readme'));
+  else if (choice === 'Open Settings') await vscode.commands.executeCommand('workbench.action.openSettings', 'mognitio.serverPath');
 }
 function schedule(): void {queue = queue.then(reconcile).catch(e => output.error(String(e)));}
 export function activate(extensionContext: vscode.ExtensionContext): void {

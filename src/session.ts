@@ -53,6 +53,7 @@ export class Session {
   private manifestBaseline?: ManifestBaseline;
   private watchers: vscode.Disposable[] = [];
   private rootless = new Map<string, {document: vscode.TextDocument}>();
+  private pendingSynchronization = 0;
   private cancellations = new Set<NodeJS.Timeout>();
   constructor(
     readonly key: string,
@@ -99,12 +100,26 @@ export class Session {
     }
   }
   private refresh(): void {
-    if (!this.client || this.client.state !== State.Running) return;
+    if (this.stopped || this.pendingSynchronization || !this.client || this.client.state !== State.Running) return;
     const providers = new Set(vscode.workspace.textDocuments.map(d =>
       this.client!.getFeature(SemanticTokensRegistrationType.method).getProvider(d)));
     providers.forEach(provider => provider?.onDidChangeSemanticTokensEmitter.fire());
   }
   invalidate(): void {if (!this.stopped) {this.generation++; this.refresh();}}
+  private async synchronize(send: () => Promise<void>): Promise<void> {
+    if (this.stopped) return;
+    ++this.pendingSynchronization;
+    ++this.generation;
+    try {await send();}
+    catch (error) {await this.stop(); throw error;}
+    finally {
+      // Also retire requests attempted while a notification was pending. Refresh
+      // only when all overlapping changes have reached the client's send path.
+      ++this.generation;
+      --this.pendingSynchronization;
+      this.refresh();
+    }
+  }
   manifest(uri: vscode.Uri): boolean {
     return !!this.folder && uri.fsPath === path.join(this.folder.uri.fsPath, 'mognitio.toml');
   }
@@ -220,10 +235,11 @@ export class Session {
         }
       },
       middleware: {
-        didOpen: async (doc, next) => {this.invalidate(); await next(doc);},
-        didChange: async (event, next) => {this.invalidate(); await next(event);},
-        didClose: async (doc, next) => {this.invalidate(); await next(doc);},
+        didOpen: (doc, next) => this.synchronize(() => next(doc)),
+        didChange: (event, next) => this.synchronize(() => next(event)),
+        didClose: (doc, next) => this.synchronize(() => next(doc)),
         provideDocumentSemanticTokens: async (document, token, next) => {
+          if (this.stopped || this.pendingSynchronization) return null;
           const generation = this.generation, version = document.version;
           let watchdog: NodeJS.Timeout | undefined;
           const cancellation = token.onCancellationRequested(() => {
@@ -293,9 +309,12 @@ export class Session {
         const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.folder, glob));
         const changed = async (uri: vscode.Uri, type: number) => {
           if (this.stopped) return;
-          this.invalidate();
-          if (this.manifest(uri)) await this.restoreManifest(uri);
-          await client.sendNotification('workspace/didChangeWatchedFiles', {changes: [{uri: uri.toString(), type}]});
+          try {
+            await this.synchronize(async () => {
+              if (this.manifest(uri)) await this.restoreManifest(uri);
+              if (!this.stopped) await client.sendNotification('workspace/didChangeWatchedFiles', {changes: [{uri: uri.toString(), type}]});
+            });
+          } catch (error) {this.output.error('File change notification failed: ' + String(error));}
         };
         this.watchers.push(watcher, watcher.onDidCreate(u => {void changed(u, 1);}),
           watcher.onDidChange(u => {void changed(u, 2);}), watcher.onDidDelete(u => {void changed(u, 3);}));

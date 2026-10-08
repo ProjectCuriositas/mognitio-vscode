@@ -9,11 +9,11 @@ const document=p=>({uri:uri(p),languageId:'mognitio'});
 const folder=p=>({uri:uri(p),name:p});
 const tick=()=>new Promise(r=>setImmediate(r));
 async function until(fn){for(let i=0;i<200;i++){if(fn())return;await tick();}throw Error('reconciliation did not finish');}
-function fixture(t,{folders=[],docs=[],platform='linux',arch='x64',remoteName}={}){
- const created=[],events={},warnings=[],infos=[],trace=[];
+function fixture(t,{folders=[],docs=[],platform='linux',arch='x64',remoteName,startError,choice}={}){
+ const created=[],events={},warnings=[],infos=[],trace=[],prompts=[],actions=[],errors=[];
  class Session {
   constructor(key,folder){this.key=key;this.folder=folder;created.push(this);}
-  async start(){trace.push('start:'+this.key);this.started=true;}
+  async start(){trace.push('start:'+this.key);if(startError)throw Error(startError);this.started=true;}
   async stop(){this.stopped=true;trace.push('stop:'+this.key);}
   async setRootlessDocuments(docs){this.documents=[...docs];trace.push('members:'+docs.map(d=>d.uri.toString()).join(','));}
   invalidate(){}async restoreManifest(){}
@@ -21,14 +21,14 @@ function fixture(t,{folders=[],docs=[],platform='linux',arch='x64',remoteName}={
  const workspace={workspaceFolders:folders,textDocuments:docs,isTrusted:true};
  for(const name of ['onDidChangeWorkspaceFolders','onDidGrantWorkspaceTrust','onDidOpenTextDocument','onDidCloseTextDocument','onDidChangeTextDocument','onDidSaveTextDocument','onDidChangeConfiguration'])
   workspace[name]=callback=>(events[name]=callback,disposable);
- const vscode={workspace,env:{remoteName},ExtensionMode:{Production:1},
-  window:{createOutputChannel:()=>({warn:m=>warnings.push(m),info:m=>infos.push(m),error:m=>{throw Error(m);},dispose(){}})},
-  commands:{registerCommand:()=>disposable}};
+ const vscode={workspace,Uri:{parse:s=>s},env:{remoteName,openExternal:async u=>actions.push(['url',u])},ExtensionMode:{Production:1},
+  window:{createOutputChannel:()=>({warn:m=>warnings.push(m),info:m=>infos.push(m),error:m=>errors.push(m),dispose(){}}),showWarningMessage:async(...args)=>{prompts.push(args);return choice;}},
+  commands:{registerCommand:()=>disposable,executeCommand:async(...args)=>actions.push(args)}};
  const code=buildSync({entryPoints:['src/extension.ts'],bundle:true,platform:'node',format:'cjs',external:['vscode','./session'],write:false}).outputFiles[0].text;
  const mod=new Module('extension');mod.require=name=>name==='vscode'?vscode:name==='./session'?{Session}:require(name);
  mod._compile('const process = '+JSON.stringify({platform,arch,env:{}})+';\n'+code,'extension.cjs');
  const api=mod.exports;api.activate({extensionMode:1,subscriptions:[]});t.after(()=>api.deactivate());
- return {created,events,warnings,infos,trace,workspace,api};
+ return {created,events,warnings,infos,trace,prompts,actions,errors,workspace,api};
 }
 test('standalone membership changes reuse one server and stop after the last close',async t=>{
  const a=document('/fixture/a.mgn'),b=document('/fixture/b.mgn'),f=fixture(t,{docs:[a]});
@@ -63,3 +63,22 @@ for(const environment of [{platform:'win32'},{arch:'arm64'},{remoteName:'ssh-rem
   f.events.onDidOpenTextDocument();await f.api.deactivate();assert.equal(f.warnings.length,1);assert.equal(f.created.length,0);
  });
 }
+
+test('conflicts name normalized roots and reasons only on changes, including recurrence after recovery',async t=>{
+ const f=fixture(t,{folders:[folder('/fixture/a'),folder('/fixture/a/src/nested'),folder('/fixture/independent')]});
+ await until(()=>f.created.length===1);assert.equal(f.created[0].folder.uri.fsPath,'/fixture/independent');
+ assert.equal(f.warnings.length,1);assert.match(f.warnings[0],/equal or containing/);
+ for(const root of ['/fixture/a/src','/fixture/a/src/nested/src'])assert(f.warnings[0].includes(root));
+ f.events.onDidOpenTextDocument();await new Promise(r=>setTimeout(r,30));assert.equal(f.warnings.length,1);
+ f.workspace.workspaceFolders.splice(1,1);f.events.onDidChangeWorkspaceFolders();await until(()=>f.created.length===2);
+ f.workspace.workspaceFolders.push(folder('/fixture/a/src/again'));f.events.onDidChangeWorkspaceFolders();await until(()=>f.warnings.length===2);
+ assert(f.warnings[1].includes('/fixture/a/src/again/src'));assert(f.created.find(s=>s.folder.uri.fsPath==='/fixture/a').stopped);
+});
+for(const choice of ['Installation Guide','Open Settings',undefined])test('launch failure action: '+String(choice),async t=>{
+ const f=fixture(t,{folders:[folder('/fixture/a')],startError:'not installed',choice});
+ await until(()=>f.prompts.length===1);await tick();
+ assert.deepEqual(f.prompts[0],['Mognitio: Error: not installed','Installation Guide','Open Settings']);
+ const expected=choice==='Installation Guide'?[['url','https://github.com/ProjectCuriositas/Mognitio#readme']]:choice==='Open Settings'?[['workbench.action.openSettings','mognitio.serverPath']]:[];
+ assert.deepEqual(f.actions,expected);assert(f.created[0].stopped);
+ f.events.onDidOpenTextDocument();await new Promise(r=>setTimeout(r,30));assert.equal(f.prompts.length,1);
+});
