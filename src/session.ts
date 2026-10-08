@@ -7,6 +7,8 @@ import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 import {
   LanguageClient, InitializeParams, ErrorAction, CloseAction, State,
+  DidOpenTextDocumentNotification, DidChangeTextDocumentNotification, DidCloseTextDocumentNotification,
+  TextDocumentSyncKind,
   SemanticTokensRegistrationType, SemanticTokensRefreshRequest, PublishDiagnosticsNotification
 } from 'vscode-languageclient/node';
 import { compatibleVersion, compatibleCapabilities, contains } from './policy';
@@ -50,6 +52,7 @@ export class Session {
   private manifestObservation?: Promise<void>;
   private manifestBaseline?: ManifestBaseline;
   private watchers: vscode.Disposable[] = [];
+  private rootless = new Map<string, {document: vscode.TextDocument}>();
   private cancellations = new Set<NodeJS.Timeout>();
   constructor(
     readonly key: string,
@@ -58,6 +61,42 @@ export class Session {
     readonly output: vscode.LogOutputChannel,
     readonly expected: string | undefined,
   ) {}
+  async setRootlessDocuments(documents: readonly vscode.TextDocument[]): Promise<void> {
+    const client = this.client;
+    if (this.folder || this.stopped || !client) return;
+    const desired = new Map(documents.map(document => [document.uri.toString(), document]));
+    const open = client.getFeature(DidOpenTextDocumentNotification.method);
+    const change = client.getFeature(DidChangeTextDocumentNotification.method);
+    const close = client.getFeature(DidCloseTextDocumentNotification.method);
+    const semantic = client.getFeature(SemanticTokensRegistrationType.method);
+    for (const [key, owned] of this.rootless) if (desired.get(key) !== owned.document) {
+      this.rootless.delete(key);
+      this.invalidate();
+      const id = 'rootless:' + key;
+      semantic.unregister(id);
+      // Await close before another session can acquire this document. The send
+      // provider also updates the client's synchronized-document bookkeeping.
+      if ([...open.openDocuments].includes(owned.document)) await close.getProvider(owned.document)?.send(owned.document);
+      open.unregister(id); change.unregister(id); close.unregister(id);
+      this.cache.delete(key);
+      client.diagnostics?.delete(owned.document.uri);
+    }
+    for (const [key, document] of desired) if (!this.rootless.has(key)) {
+      this.rootless.set(key, {document});
+      this.invalidate();
+      const id = 'rootless:' + key;
+      const documentSelector: DocumentSelector = [{language: 'mognitio', scheme: 'file', pattern: {
+        baseUri: vscode.Uri.file(path.dirname(document.uri.fsPath)).toString(),
+        pattern: path.basename(document.uri.fsPath).replace(/[?*[\]{}]/g, '[$&]')
+      }}];
+      const registerOptions = {documentSelector};
+      close.register({id, registerOptions});
+      change.register({id, registerOptions: {...registerOptions, syncKind: TextDocumentSyncKind.Full}});
+      semantic.register({id, registerOptions: {...client.initializeResult!.capabilities.semanticTokensProvider!, documentSelector}});
+      // Register last: this synchronizes documents opened before registration.
+      open.register({id, registerOptions});
+    }
+  }
   private refresh(): void {
     if (!this.client || this.client.state !== State.Running) return;
     const providers = new Set(vscode.workspace.textDocuments.map(d =>
@@ -163,7 +202,7 @@ export class Session {
       this.child = child;
       return {process: child, detached: true};
     }, {
-      documentSelector: this.selector,
+      documentSelector: this.folder ? this.selector : undefined,
       workspaceFolder: this.folder,
       outputChannel: this.output,
       diagnosticCollectionName: 'Mognitio',
@@ -210,11 +249,13 @@ export class Session {
       const uri = vscode.Uri.parse(params.uri);
       const key = uri.toString();
       const document = vscode.workspace.textDocuments.find(d => d.uri.toString() === key);
+      const ownership = this.rootless.get(key);
       const belongs = uri.scheme === 'file' && !uri.authority && (this.folder
         ? this.manifest(uri) || (uri.fsPath.endsWith('.mgn') && contains(path.join(this.folder.uri.fsPath, 'src'), uri.fsPath))
-        : this.key.slice('rootless:'.length).split('|').includes(key));
+        : ownership !== undefined);
       const valid = () => {
-        if (this.stopped || epoch !== this.epoch || !belongs) return false;
+        if (this.stopped || epoch !== this.epoch || !belongs ||
+            (!this.folder && this.rootless.get(key) !== ownership)) return false;
         if (this.manifest(uri)) return true;
         const current = vscode.workspace.textDocuments.find(d => d.uri.toString() === key);
         return current === document && (current ? params.version === current.version : params.version === undefined);
@@ -241,6 +282,7 @@ export class Session {
       await this.stop();
       throw error;
     } finally {if (timer) clearTimeout(timer);}
+    this.output.info('Connected language server: ' + command + ' (mognitio-lsp ' + match[1] + ')');
     this.watchers.push(client.onRequest(SemanticTokensRefreshRequest.type, async () => {
       this.invalidate();
     }));
@@ -260,7 +302,7 @@ export class Session {
   }
   async stop(): Promise<void> {
     if (this.stopped) return;
-    this.stopped = true; ++this.epoch; this.cache.clear(); this.diagnostics.clear();
+    this.stopped = true; ++this.epoch; this.rootless.clear(); this.cache.clear(); this.diagnostics.clear();
     this.manifestDiagnostics.clear(); ++this.manifestRead; ++this.manifestReceive;
     this.manifestObservation = undefined; this.manifestBaseline = undefined;
     this.watchers.forEach(w => w.dispose());

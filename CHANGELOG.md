@@ -2,6 +2,10 @@
 
 ## 0.1.2
 
+- Keep the standalone language server running as documents are added or removed, with exact per-document routing and stale-result rejection during workspace transfers.
+- Name sessions omitted by the window budget and explain unsupported environments in the Output channel without repeated warnings.
+- Log the verified server version after connection and recover lexical highlighting at the end of an unterminated string's line.
+
 - Accept the formal Mognitio 1.1.0 language server while retaining 0.15.x and 1.0.0 support.
 - Continue rejecting unverified versions, prereleases and build-metadata variants in production.
 - Reject malformed legacy server versions with a trailing line terminator.

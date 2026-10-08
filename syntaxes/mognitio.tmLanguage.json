@@ -10,7 +10,7 @@
     {
       "name": "string.quoted.double.mognitio",
       "begin": "\"",
-      "end": "\"",
+      "end": "\"|(?=$)",
       "patterns": [
         {
           "name": "constant.character.escape.mognitio",
