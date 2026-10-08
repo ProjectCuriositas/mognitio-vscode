@@ -54,6 +54,8 @@ export class Session {
   private watchers: vscode.Disposable[] = [];
   private rootless = new Map<string, {document: vscode.TextDocument}>();
   private pendingSynchronization = 0;
+  private watchedFiles = Promise.resolve();
+  private queuedWatch?: {uri: string, type: number};
   private cancellations = new Set<NodeJS.Timeout>();
   constructor(
     readonly key: string,
@@ -307,14 +309,25 @@ export class Session {
     if (this.folder) {
       for (const glob of ['src/**/*', 'mognitio.toml']) {
         const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(this.folder, glob));
-        const changed = async (uri: vscode.Uri, type: number) => {
+        const changed = (uri: vscode.Uri, type: number) => {
           if (this.stopped) return;
-          try {
-            await this.synchronize(async () => {
-              if (this.manifest(uri)) await this.restoreManifest(uri);
-              if (!this.stopped) await client.sendNotification('workspace/didChangeWatchedFiles', {changes: [{uri: uri.toString(), type}]});
-            });
-          } catch (error) {this.output.error('File change notification failed: ' + String(error));}
+          const key = uri.toString();
+          // Only adjacent, not-yet-started change events can be redundant.
+          // Keep create/delete boundaries and any event arriving during a read/send.
+          if (type === 2 && this.queuedWatch?.type === 2 && this.queuedWatch.uri === key) {
+            ++this.generation;
+            return;
+          }
+          const event = this.queuedWatch = {uri: key, type};
+          const previous = this.watchedFiles;
+          // Enter the semantic gate on receipt, before waiting for the FIFO slot.
+          this.watchedFiles = this.synchronize(async () => {
+            await previous;
+            if (this.queuedWatch === event) this.queuedWatch = undefined;
+            if (this.stopped) return;
+            if (this.manifest(uri)) await this.restoreManifest(uri);
+            if (!this.stopped) await client.sendNotification('workspace/didChangeWatchedFiles', {changes: [event]});
+          }).catch(error => {this.output.error('File change notification failed: ' + String(error));});
         };
         this.watchers.push(watcher, watcher.onDidCreate(u => {void changed(u, 1);}),
           watcher.onDidChange(u => {void changed(u, 2);}), watcher.onDidDelete(u => {void changed(u, 3);}));
@@ -325,7 +338,7 @@ export class Session {
     if (this.stopped) return;
     this.stopped = true; ++this.epoch; this.rootless.clear(); this.cache.clear(); this.diagnostics.clear();
     this.manifestDiagnostics.clear(); ++this.manifestRead; ++this.manifestReceive;
-    this.manifestObservation = undefined; this.manifestBaseline = undefined;
+    this.manifestObservation = undefined; this.manifestBaseline = undefined; this.queuedWatch = undefined;
     this.watchers.forEach(w => w.dispose());
     this.cancellations.forEach(clearTimeout);
     const child = this.child;

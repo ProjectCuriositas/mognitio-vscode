@@ -107,3 +107,9 @@ including overlapping changes, server refresh requests, and failed notifications
 The installed-VSIX standalone fixture checks actual semantic token ranges for
 both files, after a sibling closes, and after project-to-standalone transfer and
 an edit. The syntax-only server intentionally returns keyword tokens only.
+
+Watched-file FIFO tests hold the first manifest read or transport send and verify
+that a later event cannot overtake it. Adjacent queued duplicate changes may
+coalesce; active changes, different URIs, and create/delete boundaries must remain
+ordered. Shutdown and a failed send must discard queued successors without
+waiting indefinitely for disk observation or producing unhandled rejections.
