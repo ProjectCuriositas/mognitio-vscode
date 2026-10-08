@@ -42,8 +42,8 @@ test('overlapping watched changes refresh only after every notification complete
  const f=await fixture(t),first=deferred(),second=deferred();let count=0;
  f.session.client.sendNotification=async()=>{const i=count++;await [first,second][i].promise;f.trace.push('sent:'+i);};
  const source=f.watchers.find(w=>w.pattern.glob==='src/**/*');source.create(uri('/fixture/src/a.mgn'));source.delete(uri('/fixture/src/b.mgn'));
- second.resolve();await tick();assert.deepEqual(f.trace,['sent:1']);assert.equal(await f.tokens(),null);
- first.resolve();await tick();assert.deepEqual(f.trace,['sent:1','sent:0','refresh']);assert.deepEqual(await f.tokens(),{data:[1]});
+ second.resolve();await tick();assert.deepEqual(f.trace,[]);assert.equal(count,1,'later sends must wait for the first');assert.equal(await f.tokens(),null);
+ first.resolve();await tick();assert.deepEqual(f.trace,['sent:0','sent:1','refresh']);assert.deepEqual(await f.tokens(),{data:[1]});
 });
 for(const event of ['didOpen','didChange','didClose'])test(event+' schedules refresh after the synchronization continuation',async t=>{
  const f=await fixture(t),send=deferred();const pending=f.options().middleware[event]({},async()=>{await send.promise;f.trace.push('sent');});
@@ -54,4 +54,42 @@ test('failed watched notification stops the session instead of serving an old sn
  const f=await fixture(t);f.session.client.sendNotification=async()=>{throw Error('transport unavailable');};
  f.watchers[0].change(uri('/fixture/src/a.mgn'));await tick();await tick();
  assert(f.session.stopped);assert(!f.trace.includes('refresh'));assert(f.trace.some(x=>x.includes('transport unavailable')));assert.equal(await f.tokens(),null);
+});
+
+test('watched manifest observations and notifications stay FIFO when the later disk read could finish first',async t=>{
+ const f=await fixture(t),first=deferred(),second=deferred(),manifest=f.watchers.find(w=>w.pattern.glob==='mognitio.toml');let reads=0;
+ f.session.manifestDisk=()=>{const i=reads++;f.trace.push('read:'+i);return [first,second][i].promise;};
+ f.session.client.sendNotification=async(_,params)=>f.trace.push('sent:'+params.changes[0].type);
+ manifest.create(uri('/fixture/mognitio.toml'));await tick();manifest.change(uri('/fixture/mognitio.toml'));
+ second.resolve('later');await tick();assert.deepEqual(f.trace,['read:0']);assert.equal(await f.tokens(),null);
+ first.resolve('earlier');await tick();await tick();assert.deepEqual(f.trace,['read:0','sent:1','read:1','sent:2','refresh']);
+});
+test('adjacent unsent duplicate changes coalesce while different files and create/delete boundaries remain ordered',async t=>{
+ const f=await fixture(t),w=f.watchers[0],a=uri('/fixture/src/a.mgn'),b=uri('/fixture/src/b.mgn');
+ f.session.client.sendNotification=async(_,p)=>f.trace.push([p.changes[0].uri,p.changes[0].type]);
+ const generation=f.session.generation;
+ w.change(a);w.change(a);w.change(b);w.change(a);w.delete(a);w.create(a);w.change(a);w.change(a);
+ assert.equal(await f.tokens(),null);assert(f.session.generation>=generation+8,'even coalesced events invalidate immediately');
+ await tick();await tick();
+ assert.deepEqual(f.trace,[[a.toString(),2],[b.toString(),2],[a.toString(),2],[a.toString(),3],[a.toString(),1],[a.toString(),2],'refresh']);
+});
+test('duplicate during an active manifest observation schedules a fresh follow-up',async t=>{
+ const f=await fixture(t),disk=deferred(),w=f.watchers.find(w=>w.pattern.glob==='mognitio.toml');let reads=0;
+ f.session.manifestDisk=()=>++reads===1?disk.promise:Promise.resolve('newer');
+ w.change(uri('/fixture/mognitio.toml'));await tick();assert.equal(reads,1);
+ w.change(uri('/fixture/mognitio.toml'));w.change(uri('/fixture/mognitio.toml'));await tick();assert.equal(reads,1);
+ disk.resolve('older');await tick();await tick();assert.equal(reads,2);assert.deepEqual(f.trace,['sent','sent','refresh']);
+});
+test('stop discards queued watched events and does not wait for a stalled disk read',async t=>{
+ const f=await fixture(t),disk=deferred(),w=f.watchers.find(w=>w.pattern.glob==='mognitio.toml');let reads=0;
+ f.session.manifestDisk=()=>{reads++;return disk.promise;};
+ w.change(uri('/fixture/mognitio.toml'));await tick();w.delete(uri('/fixture/mognitio.toml'));
+ await f.session.stop();assert(f.session.stopped);disk.resolve('late');await tick();await tick();
+ assert.equal(reads,1);assert.deepEqual(f.trace,[]);assert.equal(await f.tokens(),null);
+});
+test('failed first notification discards queued successors without an unhandled rejection',async t=>{
+ const f=await fixture(t),gate=deferred(),w=f.watchers[0];let sends=0;
+ f.session.client.sendNotification=async()=>{sends++;await gate.promise;throw Error('first send failed');};
+ w.create(uri('/fixture/src/a.mgn'));w.delete(uri('/fixture/src/a.mgn'));await tick();gate.resolve();await tick();await tick();
+ assert.equal(sends,1);assert(f.session.stopped);assert.equal(f.trace.filter(x=>x.startsWith('error:')).length,1);assert(!f.trace.includes('refresh'));
 });

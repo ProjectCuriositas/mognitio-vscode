@@ -2,6 +2,8 @@
 
 ## 0.1.2
 
+- Send watched-file notifications in session FIFO order while invalidating tokens immediately; coalesce only adjacent duplicate changes still waiting to start.
+
 - Defer semantic token refresh until pending document and watched-file changes are synchronized; suppress requests during disk observation and stop on notification failure.
 - Identify conflicting source roots and their overlap reason without repeating unchanged warnings.
 - Offer installation documentation and server-path settings from launch failure messages.
