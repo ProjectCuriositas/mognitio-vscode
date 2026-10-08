@@ -254,6 +254,7 @@ export class Session {
       const belongs = uri.scheme === 'file' && !uri.authority && (this.folder
         ? this.manifest(uri) || (uri.fsPath.endsWith('.mgn') && contains(path.join(this.folder.uri.fsPath, 'src'), uri.fsPath))
         : ownership !== undefined);
+      if (!belongs) return;
       const valid = () => {
         if (this.stopped || epoch !== this.epoch || !belongs ||
             (!this.folder && this.rootless.get(key) !== ownership)) return false;

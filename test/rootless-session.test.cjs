@@ -51,11 +51,13 @@ test('per-document selectors retain existing registrations and synchronize close
 });
 test('retired membership cannot restore diagnostics after asynchronous conversion or reacquisition',async t=>{
  const f=fixture(t),a=doc('a.mgn'),b=doc('b.mgn'),foreign=doc('foreign.mgn');await f.session.start();await f.members([a,b]);
- f.publish(foreign,[{message:'foreign'}]);await tick();assert.equal(f.shown.size,0);
+ f.publish(foreign,[{message:'foreign'}]);await tick();assert.equal(f.shown.size,0);assert.equal(f.session.diagnostics.sequence.size,0);
  f.publish(a,[{message:'current'}]);await tick();assert.equal(f.shown.get(a.uri.toString())[0].message,'current');
  let release;f.session.client.protocol2CodeConverter.asDiagnostics=()=>new Promise(r=>release=r);
  f.publish(a,[{message:'stale'}]);await f.members([b]);await f.members([a,b]);release([{message:'stale'}]);await tick();
  assert(!f.shown.has(a.uri.toString()));assert(!f.session.cache.has(a.uri.toString()));
+ await f.members([b]);f.publish(a,[{message:'late unowned'}]);await tick();
+ assert.equal(f.session.diagnostics.sequence.size,0);await f.members([a,b]);
  f.session.client.protocol2CodeConverter.asDiagnostics=async d=>d;f.publish(a,[{message:'fresh'}]);await tick();assert.equal(f.shown.get(a.uri.toString())[0].message,'fresh');
  await f.session.stop();assert.equal(f.shown.size,0);
 });
