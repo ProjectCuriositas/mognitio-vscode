@@ -130,6 +130,8 @@ exports.run=async()=>{
   await vscode.commands.executeCommand('mognitio.restartServer');
   await until(async()=>(await vscode.commands.executeCommand('vscode.provideDocumentSemanticTokens',uri))?.data?.length,'explicit crash recovery');
 
+  await require('./rootless.cjs').run();
+
   async function project(parent,name,namespace){
    const folder=vscode.Uri.joinPath(parent,name);
    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folder,'src'));

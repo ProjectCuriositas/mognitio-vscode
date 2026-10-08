@@ -84,6 +84,8 @@
     "@vscode/test-electron": "2.5.2",
     "@vscode/vsce": "4.0.0",
     "esbuild": "0.25.12",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
   }
 }

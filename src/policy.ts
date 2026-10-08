@@ -25,3 +25,11 @@ export function compatibleCapabilities(c: any): boolean {
     && semantic?.full === true && Array.isArray(semantic?.legend?.tokenTypes)
     && Array.isArray(semantic?.legend?.tokenModifiers);
 }
+
+export function unsupportedEnvironment(platform: string, arch: string, remoteName?: string): string | undefined {
+  if (platform !== 'linux' || arch !== 'x64' || remoteName) {
+    return 'Unsupported Mognitio environment: ' + platform + '/' + arch +
+      (remoteName ? ', remote host ' + remoteName : '') + '. Requires Linux amd64 desktop without Remote-SSH or WSL.';
+  }
+  return undefined;
+}

@@ -90,3 +90,14 @@ The installed VSIX disable fixture uses MOGNITIO_TEST_DISABLED=1. The normal
 editor run also checks that owned server PIDs disappear after Extension Host
 shutdown. Lifecycle unit fixtures separately measure startup, cancellation,
 and shutdown deadlines, and call the deactivation entry point.
+
+The normal installed-VSIX fixture also checks standalone document membership with
+one stable server PID, file-name glob escaping, diagnostics, project ownership
+transfers in both directions, and last-document shutdown. VS Code may retain a
+model after its tab closes; the fixture uses a language change to emit the old
+Mognitio document's close event deterministically, and asserts that event directly.
+Manager unit tests also exercise ordinary document-close events.
+
+The grammar suite uses the actual TextMate/Oniguruma tokenizer to check valid
+escapes and recovery after unterminated strings. These are development-only
+dependencies and are not included in the packaged extension.
